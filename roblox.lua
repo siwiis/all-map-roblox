@@ -1,6 +1,6 @@
 --[[
 ================================================================================
-  BimSakSin Hub v2.0 | Universal Halloween Luxury Edition
+  BimSakSin Hub v3.0 | Universal Halloween Luxury Edition
   Creator     : BimSakSin
   Environment : Roblox Luau (Universal / All-Map & R6/R15 Compatible)
   Features    :
@@ -21,12 +21,12 @@
 -- 0. PRE-EXECUTION CLEANUP (Mencegah duplikasi GUI & sisa objek fisika/ESP)
 -- ============================================================================
 do
-    local existingName = "BimSakSinHub_v2"
+    local existingNames = { ["BimSakSinHub_v2"] = true, ["BimSakSinHub_v3"] = true, ["BSS_ESP_Folder"] = true }
     local function cleanupContainer(container)
         if not container then return end
         pcall(function()
             for _, child in ipairs(container:GetChildren()) do
-                if child.Name == existingName or child.Name == "BSS_ESP_Folder" then
+                if existingNames[child.Name] then
                     child:Destroy()
                 end
             end
@@ -79,12 +79,14 @@ end)
 local LocalPlayer = Players.LocalPlayer
 
 local App = {
-    Name = "BimSakSin Hub v2.0",
+    Name = "BimSakSin Hub v3.0",
     Subtitle = "semoga hari-hari kalian menyenangkan",
-    Version = "v2.0 Halloween",
-    GuiName = "BimSakSinHub_v2",
+    Version = "v3.0 Halloween",
+    GuiName = "BimSakSinHub_v3",
     IsOpen = true,
     IsMinimized = false,
+    ExpandedWidth = 650,
+    ExpandedHeight = 435,
     ActiveTab = "Dashboard",
     StartTime = os.clock(),
     DiscordUrl = "https://discord.gg/YwMCBq22f2",
@@ -770,31 +772,35 @@ do
     -- Emblem Labu 3D di Header Kiri
     Utils.CreatePumpkin3D(UI.Topbar, 32, UDim2.new(0, 32, 0.5, 0), Vector2.new(0.5, 0.5), 14, true)
 
-    -- Judul Utama ("BimSakSin Hub v2.0") & Ucapan di bawahnya
+    -- Judul Utama ("BimSakSin Hub v3.0") & Ucapan di bawahnya
     local titleLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -150, 0, 22),
+        Size = UDim2.new(1, -142, 0, 22),
         Position = UDim2.new(0, 54, 0, 6),
         BackgroundTransparency = 1,
         Font = Theme.FontBold,
         Text = App.Name,
         TextColor3 = Theme.TextPrimary,
         TextSize = 16,
+        TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex = 14,
     }, UI.Topbar)
+    UI.TitleLabel = titleLbl
     Utils.RegisterText(titleLbl, true, Theme.TextPrimary)
 
     local subLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -150, 0, 16),
+        Size = UDim2.new(1, -142, 0, 16),
         Position = UDim2.new(0, 54, 0, 29),
         BackgroundTransparency = 1,
         Font = Theme.FontFamily,
         Text = App.Subtitle,
         TextColor3 = Color3.fromRGB(255, 198, 128),
         TextSize = 11,
+        TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex = 14,
     }, UI.Topbar)
+    UI.SubLabel = subLbl
     Utils.RegisterText(subLbl, false, Color3.fromRGB(255, 198, 128))
 
     -- Topbar Controls (Minimize & Close)
@@ -902,6 +908,22 @@ do
         BackgroundTransparency = 1,
         ZIndex = 12,
     }, UI.InnerClip)
+
+    -- Subtle Corner Resize Handle (Bisa dikecilkan & dibesarkan bebas tanpa mengubah tema)
+    UI.ResizeHandle = Utils.Create("TextButton", {
+        Name = "ResizeHandle",
+        Size = UDim2.new(0, 18, 0, 18),
+        Position = UDim2.new(1, -18, 1, -18),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBold,
+        Text = "◢",
+        TextColor3 = Theme.Accent,
+        TextTransparency = 0.35,
+        TextSize = 11,
+        AutoButtonColor = false,
+        ZIndex = 24,
+    }, UI.InnerClip)
+    Utils.RegisterAccent(UI.ResizeHandle, "TextColor3")
 end
 
 -- ============================================================================
@@ -3288,7 +3310,7 @@ do
         Position = UDim2.new(0, 12, 0, 30),
         BackgroundTransparency = 1,
         Font = Theme.FontFamily,
-        Text = "Terima kasih telah menggunakan BimSakSin Hub v2.0! Semoga hari-hari kalian menyenangkan. Dukung perkembangan script dengan bergabung ke Discord atau melalui tautan donasi di bawah.",
+        Text = "Terima kasih telah menggunakan BimSakSin Hub v3.0! Semoga hari-hari kalian menyenangkan. Dukung perkembangan script dengan bergabung ke Discord atau melalui tautan donasi di bawah.",
         TextColor3 = Theme.TextSecondary,
         TextSize = 11,
         TextWrapped = true,
@@ -3332,12 +3354,87 @@ do
         Utils.Notify("Disembunyikan", "Ketuk logo labu 3D atau tekan RightShift untuk membuka.", Theme.Accent)
     end)
 
+    local function getTitleFittedMinWidth()
+        local titleWidth = (UI.TitleLabel and UI.TitleLabel.TextBounds.X > 0) and UI.TitleLabel.TextBounds.X or 172
+        -- 54px kiri (emblem labu + jarak) + lebar teks judul "BimSakSin Hub v3.0" + 92px kanan (tombol — & ✕)
+        return math.max(278, math.ceil(titleWidth) + 148)
+    end
+
+    local function applyResponsiveLayout(panelWidth)
+        local sidebarW = (panelWidth < 500) and math.clamp(math.floor(panelWidth * 0.30), 116, 166) or 166
+        UI.Sidebar.Size = UDim2.new(0, sidebarW, 1, -54)
+        UI.ContentContainer.Size = UDim2.new(1, -sidebarW, 1, -54)
+        UI.ContentContainer.Position = UDim2.new(0, sidebarW, 0, 54)
+    end
+
+    -- Drag Resize (Kecilkan & Besarkan ukuran panel menu secara halus)
+    do
+        local resizing = false
+        local resizeInput = nil
+        local resizeStartPos = nil
+        local resizeStartSize = nil
+
+        Utils.Track(UI.ResizeHandle.InputBegan:Connect(function(input)
+            if App.IsMinimized then return end
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                resizing = true
+                resizeInput = input
+                resizeStartPos = input.Position
+                resizeStartSize = UI.MainFrame.AbsoluteSize
+            end
+        end))
+
+        Utils.Track(UserInputService.InputChanged:Connect(function(input)
+            if resizing and resizeStartPos and resizeStartSize and (input == resizeInput or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                local delta = input.Position - resizeStartPos
+                local vp = (UI.ScreenGui and UI.ScreenGui.AbsoluteSize) or Vector2.new(1280, 720)
+                local minW = math.max(320, getTitleFittedMinWidth())
+                local maxW = math.max(minW, vp.X - 24)
+                local maxH = math.max(220, vp.Y - 24)
+
+                local newW = math.clamp(math.floor(resizeStartSize.X + delta.X + 0.5), minW, maxW)
+                local newH = math.clamp(math.floor(resizeStartSize.Y + delta.Y + 0.5), 220, maxH)
+
+                App.ExpandedWidth = newW
+                App.ExpandedHeight = newH
+                UI.MainFrame.Size = UDim2.new(0, newW, 0, newH)
+                applyResponsiveLayout(newW)
+            end
+        end))
+
+        Utils.Track(UserInputService.InputEnded:Connect(function(input)
+            if resizing and (input == resizeInput or input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+                resizing = false
+                resizeInput = nil
+            end
+        end))
+    end
+
     UI.MinimizeBtn.MouseButton1Click:Connect(function()
+        if not App.IsMinimized then
+            local curSize = UI.MainFrame.AbsoluteSize
+            if curSize.X >= 260 and curSize.Y >= 180 then
+                App.ExpandedWidth = math.floor(curSize.X + 0.5)
+                App.ExpandedHeight = math.floor(curSize.Y + 0.5)
+            end
+        end
+
         App.IsMinimized = not App.IsMinimized
         UI.Sidebar.Visible = not App.IsMinimized
         UI.ContentContainer.Visible = not App.IsMinimized
+        if UI.ResizeHandle then
+            UI.ResizeHandle.Visible = not App.IsMinimized
+        end
+        UI.MinimizeBtn.Text = App.IsMinimized and "□" or "—"
+
+        local targetWidth = App.IsMinimized and getTitleFittedMinWidth() or App.ExpandedWidth
+        local targetHeight = App.IsMinimized and 54 or App.ExpandedHeight
+        if not App.IsMinimized then
+            applyResponsiveLayout(targetWidth)
+        end
+
         Utils.Tween(UI.MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Size = App.IsMinimized and UDim2.new(0, 650, 0, 54) or UDim2.new(0, 650, 0, 435)
+            Size = UDim2.new(0, targetWidth, 0, targetHeight)
         })
     end)
 
