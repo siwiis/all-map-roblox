@@ -1,1338 +1,1487 @@
 --[[
-================================================================================
-  BimSakSin Hub v3.0 | Universal Halloween Luxury Edition
-  Creator     : BimSakSin
-  Environment : Roblox Luau (Universal / All-Map & R6/R15 Compatible)
-  Features    :
-- Transparent Luxury Halloween UI + 4 Corner 3D Pumpkins + 3D Pumpkin Toggle
-- Universal Adaptive Player ESP (Team/Enemy/Random, Distance, Health,
-      Transparent Avatar Highlight, Custom Font + Adaptive Translucent Backdrop)
-- Universal Item ESP (Unlimited Distance, Name + Distance, No Background,
-      Custom Font & Color)
-- Universal Generator ESP (Name, Distance, Live Process Status, Custom Font & Color)
-- Precision Auto Aimbot + Conditional RGB Weapon Laser + Auto Parry
-- Melee Immunity + Hunger & Thirst Guard (Tahan Lapar & Haus)
-- Interactive Replicated Carry System (Visible to Other Players + Carry/Lepas Buttons)
-- Interactive Replicated R6 & R15 Dance/Emote Studio (Visible on All Devices)
-- Zero-Rubberband Universal Safe Teleport ("Click") & Waypoint Manager
-- Smooth Admin-Style Free-Flight & Analog-Safe NoClip Geometry Inspector
-- Interactive Anti-Bug / Auto-Recovery Engine (AKTIF / OFF) + Anti-AFK
-- Full Menu Font & Color Customizer + Information Tab
-================================================================================
+    ============================================================================
+    BimSakSin Hub v3.0 — Luxury 3D HD Skull Edition (Complete Release)
+    Architecture: Modular Layered Luau Hub
+      1. Environment & Safe Executor Wrappers
+      2. Lifecycle & Cleanup Manager (Zero Memory Leaks / Clean Unload)
+      3. Persistent JSON Config Manager (Schema-Safe Merge)
+      4. GeoLangAPI (Real-Time IP/Geolocation + 16 Global Languages)
+      5. Luxury 3D HD Skull Viewport Renderer & Animated Verified Badge
+      6. Glassmorphic UI Component Factory (6 Complete Tabs)
+      7. Feature Controllers (Defense, Unlimited Movement, Combat, ESP, TP)
+      8. Optimized Render & Physics Loops
+    ============================================================================
 ]]
 
 -- ============================================================================
--- 0. PRE-EXECUTION CLEANUP (Mencegah duplikasi GUI, loop lama & sisa objek ESP)
+-- 1. SERVICES & SAFE ENVIRONMENT WRAPPERS
 -- ============================================================================
-do
-    if typeof(getgenv) == "function" then
-        local env = getgenv()
-        if type(env.BSS_UnloadOld) == "function" then
-            pcall(env.BSS_UnloadOld)
-            env.BSS_UnloadOld = nil
+local Services = {
+    Players = game:GetService("Players"),
+    RunService = game:GetService("RunService"),
+    UserInputService = game:GetService("UserInputService"),
+    TweenService = game:GetService("TweenService"),
+    HttpService = game:GetService("HttpService"),
+    CoreGui = game:GetService("CoreGui"),
+    Workspace = game:GetService("Workspace"),
+    VirtualUser = game:GetService("VirtualUser"),
+    StarterGui = game:GetService("StarterGui"),
+    Lighting = game:GetService("Lighting")
+}
+
+local LocalPlayer = Services.Players.LocalPlayer
+local Camera = Services.Workspace.CurrentCamera
+
+local Env = {}
+function Env.GetGuiParent()
+    local ok, hui = pcall(function()
+        if type(gethui) == "function" then
+            return gethui()
         end
+        return nil
+    end)
+    if ok and hui then
+        return hui
     end
-
-    local existingNames = {
-        ["BimSakSinHub_v2"] = true,
-        ["BimSakSinHub_v3"] = true,
-        ["BSS_ESP_Folder"] = true,
-        ["BSS_ItemESP_Folder"] = true,
-        ["BSS_GenESP_Folder"] = true,
-    }
-    local function cleanupContainer(container)
-        if not container then return end
-        pcall(function()
-            for _, child in ipairs(container:GetChildren()) do
-                if existingNames[child.Name] then
-                    child:Destroy()
-                end
-            end
-        end)
+    local okCore, core = pcall(function()
+        return Services.CoreGui
+    end)
+    if okCore and core then
+        return core
     end
-
-    if typeof(gethui) == "function" then
-        cleanupContainer(gethui())
-    end
-    cleanupContainer(game:GetService("CoreGui"))
-
-    local lp = game:GetService("Players").LocalPlayer
-    if lp then
-        cleanupContainer(lp:FindFirstChild("PlayerGui"))
-        local char = lp.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if root then
-            for _, objName in ipairs({
-                "BSS_FlyVelocity",
-                "BSS_FlyGyro",
-                "BSS_FlyLinearVel",
-                "BSS_FlyAlignOri",
-                "BSS_FlyAttachment",
-                "BSS_CarryVelocity",
-                "BSS_CarryWeld",
-            }) do
-                local old = root:FindFirstChild(objName)
-                if old then old:Destroy() end
-            end
-        end
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.PlatformStand = false
-            hum.AutoRotate = true
-        end
-    end
-
-    local oldLaser = workspace:FindFirstChild("BSS_RGB_AimLaser")
-    if oldLaser then oldLaser:Destroy() end
-
-    local oldViewAnchor = workspace:FindFirstChild("BSS_RemoteViewAnchor")
-    if oldViewAnchor then oldViewAnchor:Destroy() end
+    return LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- ============================================================================
--- 1. CORE SERVICES & MODULAR STATE TABLES (Aman dari batas 200 register Luau)
--- ============================================================================
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
-local Stats = game:GetService("Stats")
-local TeleportService = game:GetService("TeleportService")
-local Teams = game:GetService("Teams")
-
-local VirtualUser = nil
-pcall(function()
-    VirtualUser = game:GetService("VirtualUser")
-end)
-
-local VirtualInputManager = nil
-pcall(function()
-    VirtualInputManager = game:GetService("VirtualInputManager")
-end)
-
-local LocalPlayer = Players.LocalPlayer
-
-local App = {
-    Name = "BimSakSin Hub v3.0",
-    Subtitle = "semoga hari-hari kalian menyenangkan",
-    Version = "v3.0 Halloween",
-    GuiName = "BimSakSinHub_v3",
-    IsOpen = true,
-    IsMinimized = false,
-    ExpandedWidth = 650,
-    ExpandedHeight = 435,
-    ActiveTab = "Dashboard",
-    StartTime = os.clock(),
-    DiscordUrl = "https://discord.gg/YwMCBq22f2",
-    DonationUrl = "https://linktr.ee/bimsaksin",
-}
-
-local Theme = {
-    -- Palet Halloween Mewah & Transparan
-    BgPrimary = Color3.fromRGB(13, 11, 19),
-    BgSecondary = Color3.fromRGB(20, 16, 30),
-    BgCard = Color3.fromRGB(28, 22, 41),
-    BgControl = Color3.fromRGB(40, 31, 58),
-    Border = Color3.fromRGB(255, 132, 36),
-    BorderSubtle = Color3.fromRGB(78, 56, 108),
-
-    TextPrimary = Color3.fromRGB(255, 246, 235),
-    TextSecondary = Color3.fromRGB(204, 186, 172),
-    TextMuted = Color3.fromRGB(142, 124, 150),
-
-    FontFamily = Enum.Font.GothamSemibold,
-    FontBold = Enum.Font.GothamBold,
-    FontColorMode = "Auto", -- "Auto" atau Color3 spesifik
-    FontBgEnabled = false,
-    FontBgColor = Color3.fromRGB(18, 14, 26),
-    FontBgTransparency = 0.65,
-
-    Accent = Color3.fromRGB(255, 118, 26),     -- Pumpkin Gold
-    AccentDark = Color3.fromRGB(184, 72, 12),
-    Crimson = Color3.fromRGB(214, 48, 74),
-    Spectral = Color3.fromRGB(155, 89, 245),
-    Success = Color3.fromRGB(46, 213, 115),
-    Warning = Color3.fromRGB(255, 177, 43),
-    Danger = Color3.fromRGB(235, 69, 95),
-}
-
-local initialAtmo = Lighting:FindFirstChildOfClass("Atmosphere")
-
-local State = {
-    -- Movement & Physics
-    WalkSpeed = 16,
-    JumpPower = 50,
-    OriginalGravity = workspace.Gravity,
-    Gravity = workspace.Gravity,
-    FlyEnabled = false,
-    FlySpeed = 65,
-    NoclipEnabled = false,
-    InfiniteJumpEnabled = false,
-
-    -- Visuals & Remote Spectate
-    CameraFOV = 70,
-    FullbrightEnabled = false,
-    NoFogEnabled = false,
-    SpectatingPlayer = nil,
-    SpectateStreamTick = 0,
-    SpectateAnchorPart = nil,
-    Waypoints = {},
-
-    -- Teleport Concurrency Guard & Distance Telemetry
-    TeleportToken = 0,
-    IsTeleportLocking = false,
-    PreTeleportAnchored = false,
-    LastTeleportDistance = 0,
-    CustomTeleportDistance = 500,
-
-    -- UI Registries
-    AccentObjects = {},
-    AccentCallbacks = {},
-    ActiveToggleTracks = {},
-    ThemedTexts = {},
-
-    -- Original World Cache
-    OriginalLighting = {
-        Brightness = Lighting.Brightness,
-        ClockTime = Lighting.ClockTime,
-        FogEnd = Lighting.FogEnd,
-        FogStart = Lighting.FogStart,
-        GlobalShadows = Lighting.GlobalShadows,
-        Ambient = Lighting.Ambient,
-        OutdoorAmbient = Lighting.OutdoorAmbient,
-    },
-    OriginalAtmosphere = initialAtmo and {
-        Instance = initialAtmo,
-        Density = initialAtmo.Density,
-    } or nil,
-}
-
-local Physics = {
-    FlyAttachment = nil,
-    FlyLV = nil,
-    FlyAO = nil,
-    FlyBV = nil,
-    FlyBG = nil,
-    FlyCurrentVel = Vector3.zero,
-    NoclipCache = {},
-}
-
-local ESP = {
-    Enabled = false,
-    ShowAvatar = true,
-    ShowDistance = true,
-    ShowHealth = true,
-    Mode = "Auto", -- "Auto" | "Enemy" | "Ally" | "Random"
-    MaxDistance = 2500,
-
-    -- Warna & Font ESP Pemain
-    HighlightColor = Color3.fromRGB(255, 118, 26),
-    AllyColor = Color3.fromRGB(46, 213, 115),
-    EnemyColor = Color3.fromRGB(235, 69, 95),
-    DistanceColor = Color3.fromRGB(255, 210, 120),
-    HealthColor = Color3.fromRGB(85, 239, 148),
-    Font = Enum.Font.GothamBold,
-    FontColor = Color3.fromRGB(255, 248, 240),
-    FontAutoContrast = true,
-    FontBgColor = Color3.fromRGB(16, 12, 24),
-    FontBgTransparency = 0.56,
-
-    Folder = nil,
-    Entries = {},
-    RandomColorMap = {},
-}
-
-local ItemESP = {
-    Enabled = false,
-    Font = Enum.Font.GothamBold,
-    Color = Color3.fromRGB(102, 242, 255),
-    Folder = nil,
-    Entries = {},
-    Candidates = {},
-}
-
-local GeneratorESP = {
-    Enabled = false,
-    Font = Enum.Font.GothamBold,
-    Color = Color3.fromRGB(255, 196, 54),
-    Folder = nil,
-    Entries = {},
-    Candidates = {},
-}
-
-local Combat = {
-    AimbotEnabled = false,
-    AimbotMode = "Auto", -- "Auto" | "Always" | "HoldRMB"
-    AimPart = "Head", -- "Head" | "HumanoidRootPart" | "Closest"
-    TeamCheck = true,
-    FOVRadius = 220,
-    ShowFOVCircle = false,
-    Smoothness = 0.35,
-    MaxRange = 800,
-    RGBLaserEnabled = true,
-    CurrentTarget = nil,
-    LaserPart = nil,
-    FOVCircle = nil,
-
-    -- Kebal Pukulan & Survival
-    MeleeImmunity = false,
-    HungerThirstGuard = false,
-    TouchedPartsCache = {},
-    EnemyToolParts = {},
-
-    -- Auto Parry
-    AutoParryEnabled = false,
-    ParryRange = 16,
-    LastParryTime = 0,
-    ParryCooldown = 0.4,
-}
-
-local Carry = {
-    Enabled = false,
-    TargetPlayer = nil,
-    Style = "Depan", -- "Depan" | "Belakang" | "Pundak" | "Seret" | "Kepala" | "Melayang"
-    AnimTrack = nil,
-    NativePromptTriggered = false,
-}
-
-local Emotes = {
-    Playing = false,
-    CurrentDance = nil,
-    CurrentId = nil,
-    Speed = 1.0,
-    ActiveTrack = nil,
-}
-
-local Protection = {
-    AntiAFKEnabled = true,
-    AntiBugEnabled = true,
-    ErrorsCaught = 0,
-    AutoRepairs = 0,
-    IdleEventsHandled = 0,
-    HungerThirstValues = {},
-}
-
-local Connections = {}
-local UI = {
-    Tabs = {},
-    Pages = {},
-    TelemetryLabels = {},
-    FullbrightToggle = nil,
-    NoFogToggle = nil,
-    StatusLabel = nil,
-    Pumpkins = {},
-}
-
-local Utils = {}
-local Components = {}
-local SafeEngine = {}
-
--- ============================================================================
--- 2. ANTI-BUG & AUTO-RECOVERY ENGINE (SafeEngine)
--- ============================================================================
-function SafeEngine.Run(contextName, fn, ...)
-    if not Protection.AntiBugEnabled then
-        return fn(...)
-    end
-    local ok, res = xpcall(fn, function(err)
-        return tostring(err)
-    end, ...)
-    if not ok then
-        Protection.ErrorsCaught = Protection.ErrorsCaught + 1
-        SafeEngine.AutoRepair(contextName, res)
-    end
-    return ok, res
-end
-
-function SafeEngine.AutoRepair(contextName, errMsg)
-    Protection.AutoRepairs = Protection.AutoRepairs + 1
-
-    -- Pembersihan otomatis jika ada objek yatim / fisika nyangkut
+function Env.ProtectGui(gui)
     pcall(function()
-        local _, hum, root = Utils.GetCharacter()
-        if hum and not State.FlyEnabled and not Carry.Enabled then
-            if hum.PlatformStand then
-                hum.PlatformStand = false
-            end
-            if not hum.AutoRotate then
-                hum.AutoRotate = true
-            end
-        end
-        if root and not State.FlyEnabled then
-            for _, name in ipairs({ "BSS_FlyLinearVel", "BSS_FlyAlignOri", "BSS_FlyVelocity", "BSS_FlyGyro" }) do
-                local inst = root:FindFirstChild(name)
-                if inst then inst:Destroy() end
-            end
-        end
-        if not Combat.AimbotEnabled and Combat.LaserPart then
-            Combat.LaserPart.Transparency = 1
-        end
-        if UI.StatusLabel and UI.StatusLabel.Parent then
-            UI.StatusLabel.Text = string.format("Anti-Bug Aktif (%d Fix)", Protection.AutoRepairs)
+        if syn and type(syn.protect_gui) == "function" then
+            syn.protect_gui(gui)
         end
     end)
 end
 
+function Env.HttpGet(url)
+    local ok, result = pcall(function()
+        if type(request) == "function" then
+            local res = request({ Url = url, Method = "GET" })
+            if res and res.Body then
+                return res.Body
+            end
+        elseif type(http_request) == "function" then
+            local res = http_request({ Url = url, Method = "GET" })
+            if res and res.Body then
+                return res.Body
+            end
+        elseif syn and type(syn.request) == "function" then
+            local res = syn.request({ Url = url, Method = "GET" })
+            if res and res.Body then
+                return res.Body
+            end
+        end
+        return game:HttpGet(url)
+    end)
+    if ok and type(result) == "string" and #result > 0 then
+        return true, result
+    end
+    return false, nil
+end
+
+Env.HasFileIO = (type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function")
+Env.HasDrawing = (type(Drawing) == "table" or type(Drawing) == "function")
+
 -- ============================================================================
--- 3. UTILITY FUNCTIONS, SAFE TELEPORT & THEME ENGINE
+-- 2. LIFECYCLE & CLEANUP MANAGER
 -- ============================================================================
-function Utils.Track(conn)
+local CleanupManager = {
+    Alive = true,
+    Connections = {},
+    Instances = {},
+    Drawings = {},
+    Callbacks = {}
+}
+
+function CleanupManager:AddConnection(conn)
     if conn then
-        table.insert(Connections, conn)
+        table.insert(self.Connections, conn)
     end
     return conn
 end
 
-function Utils.Tween(obj, info, props)
-    local tween = TweenService:Create(obj, info, props)
-    tween:Play()
-    return tween
-end
-
-function Utils.Create(className, props, parent)
-    local inst = Instance.new(className)
-    if props then
-        for k, v in pairs(props) do
-            inst[k] = v
-        end
-    end
-    if parent then
-        inst.Parent = parent
+function CleanupManager:AddInstance(inst)
+    if inst then
+        table.insert(self.Instances, inst)
     end
     return inst
 end
 
-function Utils.AddCorner(parent, radius)
-    return Utils.Create("UICorner", {
-        CornerRadius = UDim.new(0, radius or 8)
-    }, parent)
-end
-
-function Utils.AddStroke(parent, color, thickness, transparency)
-    return Utils.Create("UIStroke", {
-        Color = color or Theme.BorderSubtle,
-        Thickness = thickness or 1,
-        Transparency = transparency or 0.25,
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-    }, parent)
-end
-
-function Utils.GetLuminance(c)
-    return (0.299 * c.R) + (0.587 * c.G) + (0.114 * c.B)
-end
-
-function Utils.GetContrastTextColor(bgColor)
-    if Utils.GetLuminance(bgColor) > 0.56 then
-        return Color3.fromRGB(18, 14, 24)
+function CleanupManager:AddDrawing(drawObj)
+    if drawObj then
+        table.insert(self.Drawings, drawObj)
     end
-    return Color3.fromRGB(255, 248, 240)
+    return drawObj
 end
 
-function Utils.RegisterAccent(obj, property)
-    table.insert(State.AccentObjects, { Object = obj, Property = property })
-    obj[property] = Theme.Accent
-end
-
-function Utils.RegisterText(label, isBold, defaultColor)
-    table.insert(State.ThemedTexts, {
-        Label = label,
-        IsBold = isBold == true,
-        DefaultColor = defaultColor or Theme.TextPrimary,
-        OrigBgTransparency = label.BackgroundTransparency,
-        OrigBgColor = label.BackgroundColor3,
-    })
-    label.Font = isBold and Theme.FontBold or Theme.FontFamily
-    if Theme.FontColorMode ~= "Auto" then
-        label.TextColor3 = Theme.FontColorMode
-    elseif Theme.FontBgEnabled then
-        label.TextColor3 = Utils.GetContrastTextColor(Theme.FontBgColor)
-    else
-        label.TextColor3 = defaultColor or Theme.TextPrimary
-    end
-
-    if Theme.FontBgEnabled then
-        label.BackgroundColor3 = Theme.FontBgColor
-        label.BackgroundTransparency = Theme.FontBgTransparency
+function CleanupManager:OnUnload(fn)
+    if type(fn) == "function" then
+        table.insert(self.Callbacks, fn)
     end
 end
 
-function Utils.ApplyMenuFontAndColors()
-    for i = #State.ThemedTexts, 1, -1 do
-        local item = State.ThemedTexts[i]
-        local lbl = item.Label
-        if lbl and lbl.Parent then
-            lbl.Font = item.IsBold and Theme.FontBold or Theme.FontFamily
+function CleanupManager:Unload()
+    if not self.Alive then
+        return
+    end
+    self.Alive = false
 
-            if Theme.FontBgEnabled then
-                lbl.BackgroundColor3 = Theme.FontBgColor
-                lbl.BackgroundTransparency = Theme.FontBgTransparency
-                if not lbl:FindFirstChildOfClass("UICorner") then
-                    Utils.AddCorner(lbl, 4)
+    for _, fn in ipairs(self.Callbacks) do
+        pcall(fn)
+    end
+
+    for _, conn in ipairs(self.Connections) do
+        pcall(function()
+            if conn.Connected then
+                conn:Disconnect()
+            end
+        end)
+    end
+    table.clear(self.Connections)
+
+    for _, drawObj in ipairs(self.Drawings) do
+        pcall(function()
+            drawObj.Visible = false
+            drawObj:Remove()
+        end)
+    end
+    table.clear(self.Drawings)
+
+    for _, inst in ipairs(self.Instances) do
+        pcall(function()
+            if inst and inst.Parent then
+                inst:Destroy()
+            end
+        end)
+    end
+    table.clear(self.Instances)
+
+    -- Restore safe character defaults
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.WalkSpeed = 16
+                hum.JumpPower = 50
+                hum.PlatformStand = false
+            end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
                 end
-            else
-                lbl.BackgroundColor3 = item.OrigBgColor
-                lbl.BackgroundTransparency = item.OrigBgTransparency
             end
-
-            if Theme.FontColorMode ~= "Auto" then
-                lbl.TextColor3 = Theme.FontColorMode
-            elseif Theme.FontBgEnabled then
-                lbl.TextColor3 = Utils.GetContrastTextColor(Theme.FontBgColor)
-            else
-                lbl.TextColor3 = item.DefaultColor
-            end
-        else
-            table.remove(State.ThemedTexts, i)
         end
-    end
+    end)
 end
 
-function Utils.SetAccentColor(newColor, newDark)
-    Theme.Accent = newColor
-    Theme.AccentDark = newDark or newColor
-    Theme.Border = newColor
-
-    for i = #State.AccentObjects, 1, -1 do
-        local item = State.AccentObjects[i]
-        if item.Object and item.Object.Parent then
-            item.Object[item.Property] = newColor
-        else
-            table.remove(State.AccentObjects, i)
-        end
+-- Clean previous instance if re-executed
+pcall(function()
+    local parent = Env.GetGuiParent()
+    local existing = parent:FindFirstChild("BimSakSinHub_v3")
+    if existing then
+        existing:Destroy()
     end
-
-    for track, isActive in pairs(State.ActiveToggleTracks) do
-        if track and track.Parent and isActive then
-            track.BackgroundColor3 = newColor
-        else
-            State.ActiveToggleTracks[track] = nil
-        end
-    end
-
-    for i = #State.AccentCallbacks, 1, -1 do
-        local cb = State.AccentCallbacks[i]
-        local ok = pcall(cb, newColor)
-        if not ok then
-            table.remove(State.AccentCallbacks, i)
-        end
-    end
-end
-
-function Utils.GetCharacter(plr)
-    local target = plr or LocalPlayer
-    local char = target and target.Character
-    if not char then return nil, nil, nil end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    return char, hum, root
-end
-
-function Utils.GetAnimator(hum)
-    if not hum then return nil end
-    local animator = hum:FindFirstChildOfClass("Animator")
-    if not animator then
-        animator = Instance.new("Animator")
-        animator.Parent = hum
-    end
-    return animator
-end
-
-function Utils.CopyText(text)
-    local ok = false
-    if typeof(setclipboard) == "function" then
-        ok = pcall(setclipboard, tostring(text))
-    elseif typeof(toclipboard) == "function" then
-        ok = pcall(toclipboard, tostring(text))
-    end
-    return ok
-end
+end)
 
 -- ============================================================================
--- PROFESSIONAL CROSS-WORLD TELEPORT & REMOTE VIEW STREAMING API (TeleportAPI)
--- Mendukung jangkauan tanpa batas jarak & multi-dunia di dalam satu map
+-- 3. CONFIG & STATE MANAGER (JSON PERSISTENCE)
 -- ============================================================================
-local TeleportAPI = {}
+local DefaultConfig = {
+    -- Visual & UI
+    AccentPreset = "RoyalGold",
+    WindowOpacity = 0.06,
+    Language = "auto",
+    MaskIP = false,
+    ToggleKey = "RightShift",
 
-function TeleportAPI.FormatDistance(studs)
-    if not studs or studs ~= studs then
-        return "0 m"
-    end
-    if studs >= 1000000 then
-        return string.format("%.2fM m (%.0f studs)", studs / 1000000, studs)
-    elseif studs >= 10000 then
-        return string.format("%.2fk m (%.0f studs)", studs / 1000, studs)
-    end
-    return string.format("%.0f m", studs)
+    -- Defense & Utility
+    AntiAFK = true,
+    AntiRagdoll = false,
+    AntiFling = false,
+    AntiVoid = false,
+    AutoHeal = false,
+    SelectedEmote = "Wave",
+
+    -- Unlimited Movement
+    WalkSpeedEnabled = false,
+    WalkSpeedValue = 32,
+    JumpPowerEnabled = false,
+    JumpPowerValue = 75,
+    FlyEnabled = false,
+    FlySpeedValue = 120,
+    NoclipEnabled = false,
+    InfiniteJumpEnabled = false,
+
+    -- Combat (Aimbot)
+    AimbotEnabled = false,
+    AimbotFOVVisible = true,
+    AimbotFOV = 140,
+    AimbotSmoothness = 0.22,
+    AimbotTargetPart = "Head",
+    AimbotTeamCheck = true,
+    AimbotWallCheck = false,
+
+    -- Visuals (ESP)
+    ESPEnabled = false,
+    ESPBox = true,
+    ESPName = true,
+    ESPHealth = true,
+    ESPTracers = false,
+    ESPChams = true,
+    ESPTeamCheck = false,
+    ESPMaxDistance = 2500,
+
+    -- Teleport
+    CtrlClickTP = false
+}
+
+local State = {}
+for k, v in pairs(DefaultConfig) do
+    State[k] = v
 end
 
-function TeleportAPI.DetectSubWorldName(plr, pos)
-    if plr then
-        local worldKeys = {
-            "world", "realm", "dimension", "zone", "area", "stage",
-            "floor", "region", "island", "sector", "map", "dungeon", "place"
-        }
-        local function scanContainer(container)
-            if not container then return nil end
-            local okAttr, attrs = pcall(function()
-                return container:GetAttributes()
-            end)
-            if okAttr and type(attrs) == "table" then
-                for k, v in pairs(attrs) do
-                    local lk = string.lower(tostring(k))
-                    for _, kw in ipairs(worldKeys) do
-                        if string.find(lk, kw, 1, true) and (type(v) == "string" or type(v) == "number") and tostring(v) ~= "" then
-                            return tostring(v)
-                        end
-                    end
-                end
-            end
-            for _, child in ipairs(container:GetChildren()) do
-                if child:IsA("StringValue") or child:IsA("IntValue") or child:IsA("NumberValue") then
-                    local lk = string.lower(child.Name)
-                    for _, kw in ipairs(worldKeys) do
-                        if string.find(lk, kw, 1, true) and tostring(child.Value) ~= "" then
-                            return tostring(child.Value)
-                        end
-                    end
-                end
-            end
-            return nil
-        end
+local ConfigManager = {
+    Folder = "BimSakSinHub",
+    FilePath = "BimSakSinHub/config_v3.json"
+}
 
-        local found = scanContainer(plr)
-            or scanContainer(plr:FindFirstChild("leaderstats"))
-            or scanContainer(plr:FindFirstChild("Data"))
-            or scanContainer(plr:FindFirstChild("Stats"))
-            or scanContainer(plr.Character)
-        if found then
-            return found
-        end
+function ConfigManager:Save()
+    if not Env.HasFileIO then
+        return false, "File I/O unavailable in executor"
     end
-
-    if pos then
-        local secX = math.floor((pos.X + 2500) / 5000)
-        local secY = math.floor((pos.Y + 2500) / 5000)
-        local secZ = math.floor((pos.Z + 2500) / 5000)
-        if secX == 0 and secY == 0 and secZ == 0 then
-            return "Main World (Pusat)"
+    local ok, err = pcall(function()
+        if type(isfolder) == "function" and type(makefolder) == "function" then
+            if not isfolder(self.Folder) then
+                makefolder(self.Folder)
+            end
         end
-        return string.format("Dunia/Sektor [%d, %d, %d]", secX, secY, secZ)
-    end
-    return "Tidak Diketahui"
+        local encoded = Services.HttpService:JSONEncode(State)
+        writefile(self.FilePath, encoded)
+    end)
+    return ok, err
 end
 
-function TeleportAPI.ResolvePlayerState(plr)
-    if not plr then return nil end
-
-    local char = plr.Character
-    if not char or not char.Parent then
-        local charsFolder = workspace:FindFirstChild("Characters") or workspace:FindFirstChild("Players")
-        if charsFolder then
-            char = charsFolder:FindFirstChild(plr.Name)
-        end
-        if not char then
-            local direct = workspace:FindFirstChild(plr.Name)
-            if direct and direct:IsA("Model") then
-                char = direct
-            end
-        end
+function ConfigManager:Load()
+    if not Env.HasFileIO then
+        return false
     end
-
-    local resolvedCF = nil
-    local isStreamedIn = false
-    local rootPart = nil
-    local hum = nil
-
-    if char and char.Parent then
-        hum = char:FindFirstChildOfClass("Humanoid")
-        rootPart = char:FindFirstChild("HumanoidRootPart")
-            or char.PrimaryPart
-            or char:FindFirstChild("UpperTorso")
-            or char:FindFirstChild("Torso")
-            or char:FindFirstChild("Head")
-            or char:FindFirstChildWhichIsA("BasePart", true)
-
-        if rootPart and rootPart:IsA("BasePart") then
-            resolvedCF = rootPart.CFrame
-            isStreamedIn = true
-        else
-            local okPivot, pivotCF = pcall(function()
-                return char:GetPivot()
-            end)
-            if okPivot and typeof(pivotCF) == "CFrame" and pivotCF.Position ~= Vector3.zero then
-                resolvedCF = pivotCF
-            end
+    local ok, decoded = pcall(function()
+        if isfile(self.FilePath) then
+            local raw = readfile(self.FilePath)
+            return Services.HttpService:JSONDecode(raw)
         end
-    end
-
-    -- Fallback ke Replicated Attributes / ValueObjects jika karakter di dunia lain belum di-stream oleh server
-    if not resolvedCF then
-        local posKeys = { "position", "pos", "cframe", "cf", "coords", "location", "lastpos" }
-        local function extractPosFrom(container)
-            if not container then return nil end
-            local okAttr, attrs = pcall(function()
-                return container:GetAttributes()
-            end)
-            if okAttr and type(attrs) == "table" then
-                for k, v in pairs(attrs) do
-                    local lk = string.lower(tostring(k))
-                    for _, pk in ipairs(posKeys) do
-                        if string.find(lk, pk, 1, true) then
-                            if typeof(v) == "CFrame" then return v end
-                            if typeof(v) == "Vector3" then return CFrame.new(v) end
-                        end
-                    end
-                end
-            end
-            for _, child in ipairs(container:GetDescendants()) do
-                local lk = string.lower(child.Name)
-                for _, pk in ipairs(posKeys) do
-                    if string.find(lk, pk, 1, true) then
-                        if child:IsA("CFrameValue") then return child.Value end
-                        if child:IsA("Vector3Value") then return CFrame.new(child.Value) end
-                    end
-                end
-            end
-            return nil
-        end
-
-        resolvedCF = extractPosFrom(plr) or (char and extractPosFrom(char))
-    end
-
-    if not resolvedCF then
         return nil
+    end)
+    if ok and type(decoded) == "table" then
+        for key, defaultVal in pairs(DefaultConfig) do
+            if decoded[key] ~= nil and type(decoded[key]) == type(defaultVal) then
+                State[key] = decoded[key]
+            else
+                State[key] = defaultVal
+            end
+        end
+        return true
+    end
+    return false
+end
+
+function ConfigManager:Reset()
+    for key, defaultVal in pairs(DefaultConfig) do
+        State[key] = defaultVal
+    end
+    self:Save()
+end
+
+ConfigManager:Load()
+
+-- ============================================================================
+-- 4. GEOLANG API (REAL-TIME IP/LOCATION + 16 GLOBAL LANGUAGES)
+-- ============================================================================
+local GeoLangAPI = {
+    CurrentLang = "en",
+    GeoData = {
+        IP = "Detecting...",
+        City = "Unknown",
+        Region = "",
+        Country = "Global",
+        CountryCode = "US",
+        ISP = "Unknown",
+        Status = "Syncing"
+    },
+    BoundElements = {},
+    OnGeoUpdated = {}
+}
+
+GeoLangAPI.LanguageNames = {
+    { Code = "auto", Label = "Auto-Detect (GeoIP)" },
+    { Code = "en",   Label = "English (EN)" },
+    { Code = "id",   Label = "Bahasa Indonesia (ID)" },
+    { Code = "es",   Label = "Español (ES)" },
+    { Code = "pt",   Label = "Português (PT)" },
+    { Code = "ru",   Label = "Русский (RU)" },
+    { Code = "zh",   Label = "中文 (ZH)" },
+    { Code = "ja",   Label = "日本語 (JA)" },
+    { Code = "ko",   Label = "한국어 (KO)" },
+    { Code = "ar",   Label = "العربية (AR)" },
+    { Code = "fr",   Label = "Français (FR)" },
+    { Code = "de",   Label = "Deutsch (DE)" },
+    { Code = "tr",   Label = "Türkçe (TR)" },
+    { Code = "vi",   Label = "Tiếng Việt (VI)" },
+    { Code = "th",   Label = "ภาษาไทย (TH)" },
+    { Code = "ms",   Label = "Bahasa Melayu (MS)" },
+    { Code = "hi",   Label = "हिन्दी (HI)" }
+}
+
+GeoLangAPI.CountryToLang = {
+    ID = "id",
+    MY = "ms", BN = "ms", SG = "en",
+    ES = "es", MX = "es", AR = "es", CO = "es", CL = "es", PE = "es",
+    BR = "pt", PT = "pt",
+    RU = "ru", BY = "ru", KZ = "ru",
+    CN = "zh", TW = "zh", HK = "zh",
+    JP = "ja",
+    KR = "ko",
+    SA = "ar", AE = "ar", EG = "ar", IQ = "ar", MA = "ar", QA = "ar", KW = "ar",
+    FR = "fr", BE = "fr", CH = "fr",
+    DE = "de", AT = "de",
+    TR = "tr",
+    VN = "vi",
+    TH = "th",
+    IN = "hi"
+}
+
+GeoLangAPI.Translations = {
+    en = {
+        TabMain = "Main & Defense",
+        TabMovement = "Movement",
+        TabCombat = "Combat",
+        TabVisuals = "Visuals",
+        TabTeleport = "Teleport",
+        TabSettings = "Settings",
+        SecDefense = "Character Defense & Protection",
+        SecEmote = "Emote Replicator",
+        SecSpeed = "Unlimited Speed & Physics (No Cap)",
+        SecFlight = "6-DOF Flight & Traversal",
+        SecAimbot = "Precision Aimbot Controller",
+        SecESP = "3D / 2D ESP Overlay Suite",
+        SecTPPlayer = "Player Teleportation & Spectate",
+        SecTPWaypoints = "Coordinate Waypoints & Click-TP",
+        SecLangGeo = "Language & Real-Time Geolocation API",
+        SecTheme = "Luxury 3D Skull Theme & Config",
+        SecSystem = "System Lifecycle & Cleanup",
+        AntiAFK = "Anti-AFK Idle Bypass",
+        AntiRagdoll = "Anti-Ragdoll & Knockback Guard",
+        AntiFling = "Anti-Fling Velocity Shield",
+        AntiVoid = "Anti-Void Auto Recovery",
+        AutoHeal = "Character Stability Regen",
+        PlayEmote = "Play Selected Emote",
+        StopEmote = "Stop Emote",
+        EnableWalkSpeed = "Enable Custom WalkSpeed",
+        WalkSpeedInput = "WalkSpeed Value (Unlimited)",
+        EnableJumpPower = "Enable Custom JumpPower",
+        JumpPowerInput = "JumpPower Value (Unlimited)",
+        EnableFly = "Enable Smooth Fly (WASD + Space/Ctrl)",
+        FlySpeedInput = "Fly Speed Value (Unlimited)",
+        EnableNoclip = "Enable Noclip (Phase Walls)",
+        EnableInfJump = "Enable Infinite Jump",
+        ResetPhysics = "Reset Physics to Default (16 / 50)",
+        EnableAimbot = "Enable Aimbot (Hold Right-Click)",
+        ShowFOV = "Show FOV Circle",
+        AimFOV = "Aimbot FOV Radius",
+        AimSmooth = "Aimbot Smoothness",
+        TeamCheck = "Ignore Teammates",
+        WallCheck = "Visibility Wall Check",
+        EnableESP = "Master ESP Switch",
+        BoxESP = "2D Bounding Box",
+        NameESP = "Player Name & Distance",
+        HealthESP = "Dynamic Health Bar",
+        TracerESP = "Bottom Screen Tracers",
+        ChamsESP = "3D Highlight Chams",
+        ESPDist = "Max ESP Distance (Studs)",
+        TPToPlayer = "Teleport to Selected Player",
+        SpectatePlayer = "Spectate Selected Player",
+        RefreshPlayers = "Refresh Player List",
+        SaveWaypoint = "Save Current Position",
+        LoadWaypoint = "Teleport to Saved Position",
+        CtrlClickTP = "Ctrl + Left-Click Teleport",
+        SelectLanguage = "Interface Language (16 Languages)",
+        AutoDetectLang = "Re-Sync Language from IP",
+        MaskIPToggle = "Mask Public IP Address",
+        RefreshGeo = "Refresh Real-Time Geolocation",
+        SaveConfig = "Save JSON Config",
+        LoadConfig = "Load JSON Config",
+        ResetConfig = "Reset Default Config",
+        UnloadHub = "UNLOAD HUB & CLEANUP SYSTEM"
+    },
+    id = {
+        TabMain = "Utama & Pertahanan",
+        TabMovement = "Pergerakan",
+        TabCombat = "Tempur",
+        TabVisuals = "Visual ESP",
+        TabTeleport = "Teleportasi",
+        TabSettings = "Pengaturan",
+        SecDefense = "Pertahanan & Perlindungan Karakter",
+        SecEmote = "Replikator Emote Universal",
+        SecSpeed = "Kecepatan & Fisika Tanpa Batas (No Limit)",
+        SecFlight = "Terbang 6-DOF & Penjelajahan",
+        SecAimbot = "Kontroler Aimbot Presisi",
+        SecESP = "Paket Overlay ESP 3D / 2D",
+        SecTPPlayer = "Teleportasi & Pantau Pemain",
+        SecTPWaypoints = "Titik Koordinat & Klik-TP",
+        SecLangGeo = "Bahasa & API Geolokasi Real-Time",
+        SecTheme = "Tema Tengkorak 3D Mewah & Konfigurasi",
+        SecSystem = "Siklus Sistem & Pembersihan",
+        AntiAFK = "Anti-AFK (Anti Kick Diam)",
+        AntiRagdoll = "Anti-Ragdoll & Anti Terjatuh",
+        AntiFling = "Perisai Anti-Fling Kecepatan",
+        AntiVoid = "Anti-Void Penyelamat Jurang",
+        AutoHeal = "Stabilitas Kesehatan Karakter",
+        PlayEmote = "Jalankan Emote Terpilih",
+        StopEmote = "Hentikan Emote",
+        EnableWalkSpeed = "Aktifkan WalkSpeed Kustom",
+        WalkSpeedInput = "Nilai WalkSpeed (Tanpa Batas)",
+        EnableJumpPower = "Aktifkan JumpPower Kustom",
+        JumpPowerInput = "Nilai JumpPower (Tanpa Batas)",
+        EnableFly = "Aktifkan Terbang Bebas (WASD + Spasi/Ctrl)",
+        FlySpeedInput = "Kecepatan Terbang (Tanpa Batas)",
+        EnableNoclip = "Aktifkan Noclip (Tembus Dinding)",
+        EnableInfJump = "Aktifkan Lompat Tanpa Batas",
+        ResetPhysics = "Reset Fisika ke Standar (16 / 50)",
+        EnableAimbot = "Aktifkan Aimbot (Tahan Klik Kanan)",
+        ShowFOV = "Tampilkan Lingkaran FOV",
+        AimFOV = "Radius FOV Aimbot",
+        AimSmooth = "Kehalusan Aimbot",
+        TeamCheck = "Abaikan Satu Tim",
+        WallCheck = "Cek Dinding Penghalang",
+        EnableESP = "Saklar Utama ESP",
+        BoxESP = "Kotak 2D Pemain",
+        NameESP = "Nama & Jarak Pemain",
+        HealthESP = "Bar Darah Dinamis",
+        TracerESP = "Garis Pelacak Pemain",
+        ChamsESP = "Sorotan 3D Chams",
+        ESPDist = "Jarak Maksimal ESP (Studs)",
+        TPToPlayer = "Teleport ke Pemain Terpilih",
+        SpectatePlayer = "Pantau Kamera Pemain",
+        RefreshPlayers = "Segarkan Daftar Pemain",
+        SaveWaypoint = "Simpan Posisi Saat Ini",
+        LoadWaypoint = "Teleport ke Posisi Tersimpan",
+        CtrlClickTP = "Ctrl + Klik Kiri untuk Teleport",
+        SelectLanguage = "Bahasa Antarmuka (16 Bahasa)",
+        AutoDetectLang = "Sinkron Otomatis dari IP",
+        MaskIPToggle = "Sembunyikan Alamat IP Publik",
+        RefreshGeo = "Segarkan Lokasi & IP Real-Time",
+        SaveConfig = "Simpan Konfigurasi JSON",
+        LoadConfig = "Muat Konfigurasi JSON",
+        ResetConfig = "Reset Konfigurasi Awal",
+        UnloadHub = "TUTUP HUB & BERSIHKAN SISTEM"
+    },
+    es = {
+        TabMain = "Principal", TabMovement = "Movimiento", TabCombat = "Combate",
+        TabVisuals = "Visuales", TabTeleport = "Teletransporte", TabSettings = "Ajustes",
+        SecDefense = "Defensa del Personaje", SecEmote = "Replicador de Emotes",
+        SecSpeed = "Velocidad y Física Sin Límites", SecFlight = "Vuelo 6-DOF y Travesía",
+        SecAimbot = "Controlador Aimbot", SecESP = "Suite Visual ESP 3D/2D",
+        SecTPPlayer = "Teletransporte a Jugadores", SecTPWaypoints = "Puntos Guardados y Click-TP",
+        SecLangGeo = "Idioma y API Geolocalización", SecTheme = "Tema Calavera 3D y Config",
+        SecSystem = "Limpieza del Sistema",
+        AntiAFK = "Anti-AFK Activo", AntiRagdoll = "Protección Anti-Ragdoll",
+        AntiFling = "Escudo Anti-Fling", AntiVoid = "Recuperación Anti-Vacío",
+        AutoHeal = "Estabilidad de Personaje", PlayEmote = "Reproducir Emote",
+        StopEmote = "Detener Emote", EnableWalkSpeed = "Activar WalkSpeed",
+        WalkSpeedInput = "Valor WalkSpeed (Sin Límite)", EnableJumpPower = "Activar JumpPower",
+        JumpPowerInput = "Valor JumpPower (Sin Límite)", EnableFly = "Activar Vuelo Libre",
+        FlySpeedInput = "Velocidad de Vuelo (Sin Límite)", EnableNoclip = "Activar Noclip",
+        EnableInfJump = "Salto Infinito", ResetPhysics = "Restablecer Física (16 / 50)",
+        EnableAimbot = "Activar Aimbot (Clic Derecho)", ShowFOV = "Mostrar Círculo FOV",
+        AimFOV = "Radio FOV", AimSmooth = "Suavizado Aimbot", TeamCheck = "Ignorar Equipo",
+        WallCheck = "Comprobar Paredes", EnableESP = "Interruptor Maestro ESP",
+        BoxESP = "Caja 2D", NameESP = "Nombre y Distancia", HealthESP = "Barra de Salud",
+        TracerESP = "Líneas Trazadoras", ChamsESP = "Resaltado 3D Chams",
+        ESPDist = "Distancia Máx ESP", TPToPlayer = "Teletransportar al Jugador",
+        SpectatePlayer = "Espectar Jugador", RefreshPlayers = "Actualizar Lista",
+        SaveWaypoint = "Guardar Posición", LoadWaypoint = "Ir a Posición Guardada",
+        CtrlClickTP = "Ctrl + Clic para Teletransportar", SelectLanguage = "Idioma (16 Idiomas)",
+        AutoDetectLang = "Detectar por IP", MaskIPToggle = "Ocultar IP Pública",
+        RefreshGeo = "Actualizar Geolocalización", SaveConfig = "Guardar Config JSON",
+        LoadConfig = "Cargar Config JSON", ResetConfig = "Restablecer Config",
+        UnloadHub = "DESCARGAR HUB Y LIMPIAR SISTEMA"
+    },
+    pt = {
+        TabMain = "Principal", TabMovement = "Movimento", TabCombat = "Combate",
+        TabVisuals = "Visuais", TabTeleport = "Teleporte", TabSettings = "Configurações",
+        SecDefense = "Defesa do Personagem", SecEmote = "Replicador de Emotes",
+        SecSpeed = "Velocidade e Física Sem Limites", SecFlight = "Voo 6-DOF e Travessia",
+        SecAimbot = "Controlador Aimbot", SecESP = "Pacote Visual ESP 3D/2D",
+        SecTPPlayer = "Teleporte para Jogadores", SecTPWaypoints = "Pontos Salvos e Click-TP",
+        SecLangGeo = "Idioma e API Geolocalização", SecTheme = "Tema Caveira 3D e Config",
+        SecSystem = "Limpeza do Sistema",
+        AntiAFK = "Anti-AFK Ativo", AntiRagdoll = "Proteção Anti-Ragdoll",
+        AntiFling = "Escudo Anti-Fling", AntiVoid = "Recuperação Anti-Void",
+        AutoHeal = "Estabilidade do Personagem", PlayEmote = "Executar Emote",
+        StopEmote = "Parar Emote", EnableWalkSpeed = "Ativar WalkSpeed",
+        WalkSpeedInput = "Valor WalkSpeed (Sem Limite)", EnableJumpPower = "Ativar JumpPower",
+        JumpPowerInput = "Valor JumpPower (Sem Limite)", EnableFly = "Ativar Voo Livre",
+        FlySpeedInput = "Velocidade de Voo (Sem Limite)", EnableNoclip = "Ativar Noclip",
+        EnableInfJump = "Pulo Infinito", ResetPhysics = "Resetar Física (16 / 50)",
+        EnableAimbot = "Ativar Aimbot (Botão Direito)", ShowFOV = "Mostrar Círculo FOV",
+        AimFOV = "Raio FOV", AimSmooth = "Suavidade Aimbot", TeamCheck = "Ignorar Equipe",
+        WallCheck = "Verificar Paredes", EnableESP = "Chave Geral ESP",
+        BoxESP = "Caixa 2D", NameESP = "Nome e Distância", HealthESP = "Barra de Vida",
+        TracerESP = "Linhas Rastreadoras", ChamsESP = "Destaque 3D Chams",
+        ESPDist = "Distância Máx ESP", TPToPlayer = "Teleportar ao Jogador",
+        SpectatePlayer = "Espectar Jogador", RefreshPlayers = "Atualizar Lista",
+        SaveWaypoint = "Salvar Posição Atual", LoadWaypoint = "Ir para Posição Salva",
+        CtrlClickTP = "Ctrl + Clique para Teleportar", SelectLanguage = "Idioma (16 Idiomas)",
+        AutoDetectLang = "Sincronizar por IP", MaskIPToggle = "Ocultar IP Público",
+        RefreshGeo = "Atualizar Geolocalização", SaveConfig = "Salvar Config JSON",
+        LoadConfig = "Carregar Config JSON", ResetConfig = "Resetar Config",
+        UnloadHub = "DESCARREGAR HUB E LIMPAR SISTEMA"
+    },
+    ru = {
+        TabMain = "Главная", TabMovement = "Движение", TabCombat = "Бой",
+        TabVisuals = "Визуалы", TabTeleport = "Телепорт", TabSettings = "Настройки",
+        SecDefense = "Защита Персонажа", SecEmote = "Репликатор Эмоций",
+        SecSpeed = "Безлимитная Скорость и Физика", SecFlight = "Полёт 6-DOF",
+        SecAimbot = "Контроллер Аимбота", SecESP = "3D/2D ESP Оверлей",
+        SecTPPlayer = "Телепорт к Игрокам", SecTPWaypoints = "Точки и Клик-ТП",
+        SecLangGeo = "Язык и Геолокация API", SecTheme = "3D Череп и Конфиг",
+        SecSystem = "Очистка Системы",
+        AntiAFK = "Анти-АФК", AntiRagdoll = "Анти-Рэгдолл",
+        AntiFling = "Щит Анти-Флинг", AntiVoid = "Защита от Пустоты",
+        AutoHeal = "Стабильность Персонажа", PlayEmote = "Запустить Эмоцию",
+        StopEmote = "Остановить Эмоцию", EnableWalkSpeed = "Включить WalkSpeed",
+        WalkSpeedInput = "Скорость Бега (Без лимита)", EnableJumpPower = "Включить JumpPower",
+        JumpPowerInput = "Сила Прыжка (Без лимита)", EnableFly = "Включить Полёт",
+        FlySpeedInput = "Скорость Полёта (Без лимита)", EnableNoclip = "Включить Ноуклип",
+        EnableInfJump = "Бесконечный Прыжок", ResetPhysics = "Сбросить Физику (16 / 50)",
+        EnableAimbot = "Включить Аимбот (ПКМ)", ShowFOV = "Показать Круг FOV",
+        AimFOV = "Радиус FOV", AimSmooth = "Плавность Аимбота", TeamCheck = "Проверка Команды",
+        WallCheck = "Проверка Стен", EnableESP = "Главный Переключатель ESP",
+        BoxESP = "2D Рамка", NameESP = "Имя и Дистанция", HealthESP = "Полоса Здоровья",
+        TracerESP = "Линии к Игрокам", ChamsESP = "3D Подсветка Chams",
+        ESPDist = "Макс. Дистанция ESP", TPToPlayer = "Телепорт к Игроку",
+        SpectatePlayer = "Наблюдать за Игроком", RefreshPlayers = "Обновить Список",
+        SaveWaypoint = "Сохранить Позицию", LoadWaypoint = "Телепорт к Точке",
+        CtrlClickTP = "Ctrl + ЛКМ Телепорт", SelectLanguage = "Язык (16 языков)",
+        AutoDetectLang = "Автоопределение по IP", MaskIPToggle = "Скрыть Публичный IP",
+        RefreshGeo = "Обновить Геолокацию", SaveConfig = "Сохранить JSON",
+        LoadConfig = "Загрузить JSON", ResetConfig = "Сбросить Конфиг",
+        UnloadHub = "ВЫГРУЗИТЬ ХАБ И ОЧИСТИТЬ"
+    },
+    zh = {
+        TabMain = "主页与防御", TabMovement = "移动系统", TabCombat = "战斗辅助",
+        TabVisuals = "透视视觉", TabTeleport = "传送功能", TabSettings = "系统设置",
+        SecDefense = "角色防御与保护", SecEmote = "动作表情复制器",
+        SecSpeed = "无限制速度与物理引擎", SecFlight = "六自由度飞行与穿墙",
+        SecAimbot = "精准自瞄控制器", SecESP = "3D/2D 透视套件",
+        SecTPPlayer = "玩家传送与观战", SecTPWaypoints = "坐标传送点与点击传送",
+        SecLangGeo = "语言与实时IP定位API", SecTheme = "奢华3D骷髅主题与配置",
+        SecSystem = "系统生命周期与清理",
+        AntiAFK = "防挂机踢出 (Anti-AFK)", AntiRagdoll = "防布娃娃击倒",
+        AntiFling = "防甩飞护盾", AntiVoid = "防掉入虚空保护",
+        AutoHeal = "角色状态稳定", PlayEmote = "播放选定动作",
+        StopEmote = "停止动作", EnableWalkSpeed = "启用自定义移动速度",
+        WalkSpeedInput = "移动速度数值 (无上限)", EnableJumpPower = "启用自定义跳跃高度",
+        JumpPowerInput = "跳跃高度数值 (无上限)", EnableFly = "启用自由飞行",
+        FlySpeedInput = "飞行速度数值 (无上限)", EnableNoclip = "启用穿墙模式",
+        EnableInfJump = "启用无限跳跃", ResetPhysics = "重置默认物理 (16 / 50)",
+        EnableAimbot = "启用自瞄 (按住右键)", ShowFOV = "显示FOV范围圈",
+        AimFOV = "自瞄FOV半径", AimSmooth = "自瞄平滑度", TeamCheck = "忽略队友",
+        WallCheck = "障碍物检测", EnableESP = "ESP总开关",
+        BoxESP = "2D方框透视", NameESP = "玩家名称与距离", HealthESP = "动态血条",
+        TracerESP = "屏幕射线追踪", ChamsESP = "3D高亮透视",
+        ESPDist = "最大ESP距离", TPToPlayer = "传送到选定玩家",
+        SpectatePlayer = "观战选定玩家", RefreshPlayers = "刷新玩家列表",
+        SaveWaypoint = "保存当前坐标", LoadWaypoint = "传送到保存坐标",
+        CtrlClickTP = "Ctrl + 左键点击传送", SelectLanguage = "界面语言 (16种语言)",
+        AutoDetectLang = "根据IP自动匹配语言", MaskIPToggle = "隐藏公网IP地址",
+        RefreshGeo = "刷新实时地理位置", SaveConfig = "保存JSON配置",
+        LoadConfig = "加载JSON配置", ResetConfig = "重置默认配置",
+        UnloadHub = "卸载面板并清理系统"
+    },
+    ja = {
+        TabMain = "メイン・防御", TabMovement = "移動・物理", TabCombat = "戦闘",
+        TabVisuals = "視覚ESP", TabTeleport = "テレポート", TabSettings = "設定",
+        SecDefense = "キャラクター防御システム", SecEmote = "エモート再生",
+        SecSpeed = "無制限スピード＆物理演算", SecFlight = "自由飛行＆すり抜け",
+        SecAimbot = "エイムボット制御", SecESP = "3D/2D ESPオーバーレイ",
+        SecTPPlayer = "プレイヤー移動・観戦", SecTPWaypoints = "座標保存＆クリック移動",
+        SecLangGeo = "言語＆リアルタイムIP位置情報", SecTheme = "3Dスカルテーマ＆設定",
+        SecSystem = "システム終了・クリーンアップ",
+        AntiAFK = "放置キック防止 (Anti-AFK)", AntiRagdoll = "ラグドール防止",
+        AntiFling = "吹き飛ばし防止シールド", AntiVoid = "奈落落下防止",
+        AutoHeal = "キャラクター安定化", PlayEmote = "エモート再生",
+        StopEmote = "エモート停止", EnableWalkSpeed = "移動速度変更を有効化",
+        WalkSpeedInput = "移動速度 (上限なし)", EnableJumpPower = "ジャンプ力変更を有効化",
+        JumpPowerInput = "ジャンプ力 (上限なし)", EnableFly = "フライ飛行を有効化",
+        FlySpeedInput = "飛行速度 (上限なし)", EnableNoclip = "壁すり抜け (Noclip)",
+        EnableInfJump = "無限ジャンプ", ResetPhysics = "物理設定を初期化 (16 / 50)",
+        EnableAimbot = "エイムボット (右クリック長押し)", ShowFOV = "FOV円を表示",
+        AimFOV = "FOV半径", AimSmooth = "エイム滑らかさ", TeamCheck = "味方を除外",
+        WallCheck = "壁判定チェック", EnableESP = "ESPマスタースイッチ",
+        BoxESP = "2Dボックス", NameESP = "名前と距離", HealthESP = "体力バー",
+        TracerESP = "トレーサー線", ChamsESP = "3DハイライトChams",
+        ESPDist = "ESP最大距離", TPToPlayer = "選択プレイヤーへ移動",
+        SpectatePlayer = "プレイヤーを観戦", RefreshPlayers = "リスト更新",
+        SaveWaypoint = "現在位置を保存", LoadWaypoint = "保存位置へ移動",
+        CtrlClickTP = "Ctrl + クリックで移動", SelectLanguage = "表示言語 (16言語対応)",
+        AutoDetectLang = "IPから言語を自動同期", MaskIPToggle = "IPアドレスを隠す",
+        RefreshGeo = "位置情報を再取得", SaveConfig = "JSON設定を保存",
+        LoadConfig = "JSON設定を読込", ResetConfig = "初期設定に戻す",
+        UnloadHub = "ハブを終了してシステム清掃"
+    },
+    ko = {
+        TabMain = "메인 및 방어", TabMovement = "이동", TabCombat = "전투",
+        TabVisuals = "시각 ESP", TabTeleport = "텔레포트", TabSettings = "설정",
+        SecDefense = "캐릭터 방어 및 보호", SecEmote = "이모트 리플리케이터",
+        SecSpeed = "무제한 속도 및 물리 엔진", SecFlight = "자유 비행 및 노클립",
+        SecAimbot = "에임봇 컨트롤러", SecESP = "3D/2D ESP 오버레이",
+        SecTPPlayer = "플레이어 텔레포트 및 관전", SecTPWaypoints = "좌표 저장 및 클릭 이동",
+        SecLangGeo = "언어 및 실시간 IP 위치 API", SecTheme = "럭셔리 3D 해골 테마",
+        SecSystem = "시스템 종료 및 정리",
+        AntiAFK = "자리비움 방지 (Anti-AFK)", AntiRagdoll = "래그돌 방지",
+        AntiFling = "날아감 방지 실드", AntiVoid = "공허 추락 방지",
+        AutoHeal = "캐릭터 상태 유지", PlayEmote = "이모트 실행",
+        StopEmote = "이모트 중지", EnableWalkSpeed = "이동 속도 활성화",
+        WalkSpeedInput = "이동 속도 값 (무제한)", EnableJumpPower = "점프력 활성화",
+        JumpPowerInput = "점프력 값 (무제한)", EnableFly = "플라이 비행 활성화",
+        FlySpeedInput = "비행 속도 값 (무제한)", EnableNoclip = "벽 통과 (Noclip)",
+        EnableInfJump = "무한 점프", ResetPhysics = "물리 기본값 복원 (16 / 50)",
+        EnableAimbot = "에임봇 활성화 (우클릭 유지)", ShowFOV = "FOV 원 표시",
+        AimFOV = "FOV 반경", AimSmooth = "에임 부드러움", TeamCheck = "팀원 제외",
+        WallCheck = "벽 감지 확인", EnableESP = "ESP 마스터 스위치",
+        BoxESP = "2D 박스", NameESP = "이름 및 거리", HealthESP = "체력 바",
+        TracerESP = "트레이서 선", ChamsESP = "3D 하이라이트 Chams",
+        ESPDist = "최대 ESP 거리", TPToPlayer = "선택 플레이어로 이동",
+        SpectatePlayer = "플레이어 관전", RefreshPlayers = "목록 새로고침",
+        SaveWaypoint = "현재 위치 저장", LoadWaypoint = "저장된 위치로 이동",
+        CtrlClickTP = "Ctrl + 클릭 텔레포트", SelectLanguage = "인터페이스 언어 (16개국어)",
+        AutoDetectLang = "IP 기반 자동 언어 동기화", MaskIPToggle = "공인 IP 주소 가리기",
+        RefreshGeo = "실시간 위치 새로고침", SaveConfig = "JSON 설정 저장",
+        LoadConfig = "JSON 설정 불러오기", ResetConfig = "기본 설정 초기화",
+        UnloadHub = "허브 종료 및 시스템 정리"
+    },
+    ar = {
+        TabMain = "الرئيسية", TabMovement = "الحركة", TabCombat = "القتال",
+        TabVisuals = "الرؤية ESP", TabTeleport = "الانتقال", TabSettings = "الإعدادات",
+        SecDefense = "حماية الشخصية", SecEmote = "مشغل الحركات",
+        SecSpeed = "سرعة وفيزياء بلا حدود", SecFlight = "الطيران الحر",
+        SecAimbot = "التصويب التلقائي", SecESP = "نظام كشف اللاعبين",
+        SecTPPlayer = "الانتقال للاعبين", SecTPWaypoints = "حفظ الإحداثيات",
+        SecLangGeo = "اللغة وتحديد الموقع IP", SecTheme = "تصميم الجمجمة 3D",
+        SecSystem = "تنظيف النظام",
+        AntiAFK = "منع الطرد التلقائي", AntiRagdoll = "منع السقوط",
+        AntiFling = "درع منع القذف", AntiVoid = "الحماية من الفراغ",
+        AutoHeal = "استقرار الشخصية", PlayEmote = "تشغيل الحركة",
+        StopEmote = "إيقاف الحركة", EnableWalkSpeed = "تفعيل سرعة المشي",
+        WalkSpeedInput = "قيمة السرعة (بلا حدود)", EnableJumpPower = "تفعيل قوة القفز",
+        JumpPowerInput = "قيمة القفز (بلا حدود)", EnableFly = "تفعيل الطيران",
+        FlySpeedInput = "سرعة الطيران (بلا حدود)", EnableNoclip = "اختراق الجدران",
+        EnableInfJump = "قفز لا نهائي", ResetPhysics = "إعادة ضبط الفيزياء",
+        EnableAimbot = "تفعيل التصويب", ShowFOV = "إظهار دائرة FOV",
+        AimFOV = "نطاق FOV", AimSmooth = "نعومة التصويب", TeamCheck = "تجاهل الفريق",
+        WallCheck = "فحص الجدران", EnableESP = "تشغيل ESP",
+        BoxESP = "مربع 2D", NameESP = "الاسم والمسافة", HealthESP = "شريط الصحة",
+        TracerESP = "خطوط التتبع", ChamsESP = "إبراز 3D",
+        ESPDist = "أقصى مسافة ESP", TPToPlayer = "انتقال للاعب",
+        SpectatePlayer = "مراقبة اللاعب", RefreshPlayers = "تحديث القائمة",
+        SaveWaypoint = "حفظ الموقع الحالي", LoadWaypoint = "الانتقال للموقع المحفوظ",
+        CtrlClickTP = "Ctrl + نقر للانتقال", SelectLanguage = "اللغة (16 لغة)",
+        AutoDetectLang = "تحديد تلقائي عبر IP", MaskIPToggle = "إخفاء عنوان IP",
+        RefreshGeo = "تحديث الموقع الجغرافي", SaveConfig = "حفظ الإعدادات JSON",
+        LoadConfig = "تحميل الإعدادات", ResetConfig = "إعادة الضبط",
+        UnloadHub = "إغلاق وتنظيف النظام"
+    },
+    fr = {
+        TabMain = "Défense", TabMovement = "Mouvement", TabCombat = "Combat",
+        TabVisuals = "Visuels", TabTeleport = "Téléportation", TabSettings = "Paramètres",
+        SecDefense = "Défense du Personnage", SecEmote = "Réplicateur d'Emotes",
+        SecSpeed = "Vitesse & Physique Illimitées", SecFlight = "Vol 6-DOF & Traversée",
+        SecAimbot = "Contrôleur Aimbot", SecESP = "Suite Visuelle ESP 3D/2D",
+        SecTPPlayer = "Téléportation Joueurs", SecTPWaypoints = "Points Sauvegardés",
+        SecLangGeo = "Langue & API Géolocalisation", SecTheme = "Thème Crâne 3D & Config",
+        SecSystem = "Nettoyage Système",
+        AntiAFK = "Anti-AFK Actif", AntiRagdoll = "Protection Anti-Ragdoll",
+        AntiFling = "Bouclier Anti-Fling", AntiVoid = "Protection Anti-Vide",
+        AutoHeal = "Stabilité Personnage", PlayEmote = "Jouer l'Emote",
+        StopEmote = "Arrêter l'Emote", EnableWalkSpeed = "Activer WalkSpeed",
+        WalkSpeedInput = "Valeur WalkSpeed (Illimité)", EnableJumpPower = "Activer JumpPower",
+        JumpPowerInput = "Valeur JumpPower (Illimité)", EnableFly = "Activer Vol Libre",
+        FlySpeedInput = "Vitesse de Vol (Illimité)", EnableNoclip = "Activer Noclip",
+        EnableInfJump = "Saut Infini", ResetPhysics = "Réinitialiser Physique (16 / 50)",
+        EnableAimbot = "Activer Aimbot (Clic Droit)", ShowFOV = "Afficher Cercle FOV",
+        AimFOV = "Rayon FOV", AimSmooth = "Fluidité Aimbot", TeamCheck = "Ignorer Équipe",
+        WallCheck = "Vérification Murs", EnableESP = "Interrupteur Principal ESP",
+        BoxESP = "Boîte 2D", NameESP = "Nom & Distance", HealthESP = "Barre de Vie",
+        TracerESP = "Lignes Traceurs", ChamsESP = "Surbrillance 3D Chams",
+        ESPDist = "Distance Max ESP", TPToPlayer = "Téléporter au Joueur",
+        SpectatePlayer = "Observer le Joueur", RefreshPlayers = "Actualiser Liste",
+        SaveWaypoint = "Sauvegarder Position", LoadWaypoint = "Aller à la Position",
+        CtrlClickTP = "Ctrl + Clic Téléportation", SelectLanguage = "Langue (16 Langues)",
+        AutoDetectLang = "Synchroniser via IP", MaskIPToggle = "Masquer IP Publique",
+        RefreshGeo = "Actualiser Géolocalisation", SaveConfig = "Sauvegarder JSON",
+        LoadConfig = "Charger JSON", ResetConfig = "Réinitialiser Config",
+        UnloadHub = "DÉCHARGER LE HUB & NETTOYER"
+    },
+    de = {
+        TabMain = "Schutz", TabMovement = "Bewegung", TabCombat = "Kampf",
+        TabVisuals = "Visuell", TabTeleport = "Teleport", TabSettings = "Einstellungen",
+        SecDefense = "Charakterschutz", SecEmote = "Emote-Replikator",
+        SecSpeed = "Unbegrenzte Geschwindigkeit", SecFlight = "6-DOF Flug & Noclip",
+        SecAimbot = "Aimbot-Steuerung", SecESP = "3D/2D ESP Overlay",
+        SecTPPlayer = "Spieler-Teleport", SecTPWaypoints = "Wegpunkte & Klick-TP",
+        SecLangGeo = "Sprache & Echtzeit-GeoIP", SecTheme = "3D-Schädel-Design & Config",
+        SecSystem = "Systembereinigung",
+        AntiAFK = "Anti-AFK Schutz", AntiRagdoll = "Anti-Ragdoll",
+        AntiFling = "Anti-Fling Schild", AntiVoid = "Anti-Void Rettung",
+        AutoHeal = "Charakterstabilität", PlayEmote = "Emote Abspielen",
+        StopEmote = "Emote Stoppen", EnableWalkSpeed = "WalkSpeed Aktivieren",
+        WalkSpeedInput = "WalkSpeed Wert (Unbegrenzt)", EnableJumpPower = "JumpPower Aktivieren",
+        JumpPowerInput = "JumpPower Wert (Unbegrenzt)", EnableFly = "Flug Aktivieren",
+        FlySpeedInput = "Fluggeschwindigkeit (Unbegrenzt)", EnableNoclip = "Noclip Aktivieren",
+        EnableInfJump = "Unendlicher Sprung", ResetPhysics = "Physik Zurücksetzen (16 / 50)",
+        EnableAimbot = "Aimbot (Rechtsklick halten)", ShowFOV = "FOV-Kreis Anzeigen",
+        AimFOV = "FOV-Radius", AimSmooth = "Aimbot-Glättung", TeamCheck = "Team Ignorieren",
+        WallCheck = "Wandprüfung", EnableESP = "ESP Hauptschalter",
+        BoxESP = "2D Box", NameESP = "Name & Distanz", HealthESP = "Lebensbalken",
+        TracerESP = "Tracer-Linien", ChamsESP = "3D Chams Hervorhebung",
+        ESPDist = "Max. ESP-Distanz", TPToPlayer = "Zum Spieler Teleportieren",
+        SpectatePlayer = "Spieler Beobachten", RefreshPlayers = "Liste Aktualisieren",
+        SaveWaypoint = "Position Speichern", LoadWaypoint = "Zur Position Teleportieren",
+        CtrlClickTP = "Strg + Klick Teleport", SelectLanguage = "Sprache (16 Sprachen)",
+        AutoDetectLang = "Über IP Erkennen", MaskIPToggle = "Öffentliche IP Verbergen",
+        RefreshGeo = "Standort Aktualisieren", SaveConfig = "JSON Speichern",
+        LoadConfig = "JSON Laden", ResetConfig = "Zurücksetzen",
+        UnloadHub = "HUB ENTLADEN & BEREINIGEN"
+    },
+    tr = {
+        TabMain = "Savunma", TabMovement = "Hareket", TabCombat = "Savaş",
+        TabVisuals = "Görsel ESP", TabTeleport = "Işınlanma", TabSettings = "Ayarlar",
+        SecDefense = "Karakter Koruması", SecEmote = "Emote Oynatıcı",
+        SecSpeed = "Sınırsız Hız ve Fizik", SecFlight = "Serbest Uçuş ve Noclip",
+        SecAimbot = "Aimbot Kontrolcüsü", SecESP = "3D/2D ESP Paketi",
+        SecTPPlayer = "Oyuncuya Işınlanma", SecTPWaypoints = "Konum Kaydetme",
+        SecLangGeo = "Dil ve Gerçek Zamanlı IP API", SecTheme = "3D Kafatası Teması",
+        SecSystem = "Sistem Temizliği",
+        AntiAFK = "Anti-AFK Koruması", AntiRagdoll = "Anti-Ragdoll",
+        AntiFling = "Anti-Fling Kalkanı", AntiVoid = "Boşluktan Kurtarma",
+        AutoHeal = "Karakter Dengesi", PlayEmote = "Emote Başlat",
+        StopEmote = "Emote Durdur", EnableWalkSpeed = "WalkSpeed Aç",
+        WalkSpeedInput = "WalkSpeed Değeri (Sınırsız)", EnableJumpPower = "JumpPower Aç",
+        JumpPowerInput = "JumpPower Değeri (Sınırsız)", EnableFly = "Uçuşu Aç",
+        FlySpeedInput = "Uçuş Hızı (Sınırsız)", EnableNoclip = "Duvardan Geçme (Noclip)",
+        EnableInfJump = "Sınırsız Zıplama", ResetPhysics = "Fiziği Sıfırla (16 / 50)",
+        EnableAimbot = "Aimbot Aç (Sağ Tık)", ShowFOV = "FOV Dairesini Göster",
+        AimFOV = "FOV Yarıçapı", AimSmooth = "Aimbot Yumuşaklığı", TeamCheck = "Takımı Yoksay",
+        WallCheck = "Duvar Kontrolü", EnableESP = "Ana ESP Anahtarı",
+        BoxESP = "2D Kutu", NameESP = "İsim ve Mesafe", HealthESP = "Can Çubuğu",
+        TracerESP = "İzleyici Çizgiler", ChamsESP = "3D Chams Vurgusu",
+        ESPDist = "Maks ESP Mesafesi", TPToPlayer = "Oyuncuya Işınlan",
+        SpectatePlayer = "Oyuncuyu İzle", RefreshPlayers = "Listeyi Yenile",
+        SaveWaypoint = "Konumu Kaydet", LoadWaypoint = "Kayıtlı Konuma Git",
+        CtrlClickTP = "Ctrl + Tık Işınlanma", SelectLanguage = "Arayüz Dili (16 Dil)",
+        AutoDetectLang = "IP'den Otomatik Algıla", MaskIPToggle = "IP Adresini Gizle",
+        RefreshGeo = "Konumu Yenile", SaveConfig = "JSON Kaydet",
+        LoadConfig = "JSON Yükle", ResetConfig = "Varsayılana Sıfırla",
+        UnloadHub = "HUB'I KAPAT VE TEMİZLE"
+    },
+    vi = {
+        TabMain = "Chính & Bảo Vệ", TabMovement = "Di Chuyển", TabCombat = "Chiến Đấu",
+        TabVisuals = "Hiển Thị ESP", TabTeleport = "Dịch Chuyển", TabSettings = "Cài Đặt",
+        SecDefense = "Bảo Vệ Nhân Vật", SecEmote = "Trình Phát Hành Động",
+        SecSpeed = "Tốc Độ & Vật Lý Không Giới Hạn", SecFlight = "Bay Tự Do & Xuyên Tường",
+        SecAimbot = "Điều Khiển Aimbot", SecESP = "Bộ Công Cụ ESP 3D/2D",
+        SecTPPlayer = "Dịch Chuyển & Theo Dõi", SecTPWaypoints = "Lưu Tọa Độ & Click-TP",
+        SecLangGeo = "Ngôn Ngữ & API Vị Trí IP", SecTheme = "Giao Diện Đầu Lâu 3D",
+        SecSystem = "Dọn Dẹp Hệ Thống",
+        AntiAFK = "Chống Kick AFK", AntiRagdoll = "Chống Ngã Ragdoll",
+        AntiFling = "Khiên Chống Văng", AntiVoid = "Chống Rơi Vực",
+        AutoHeal = "Ổn Định Nhân Vật", PlayEmote = "Chạy Hành Động",
+        StopEmote = "Dừng Hành Động", EnableWalkSpeed = "Bật Tốc Độ Chạy",
+        WalkSpeedInput = "Giá Trị WalkSpeed (Không Giới Hạn)", EnableJumpPower = "Bật Lực Nhảy",
+        JumpPowerInput = "Giá Trị JumpPower (Không Giới Hạn)", EnableFly = "Bật Bay Tự Do",
+        FlySpeedInput = "Tốc Độ Bay (Không Giới Hạn)", EnableNoclip = "Bật Xuyên Tường",
+        EnableInfJump = "Nhảy Vô Hạn", ResetPhysics = "Đặt Lại Vật Lý (16 / 50)",
+        EnableAimbot = "Bật Aimbot (Giữ Chuột Phải)", ShowFOV = "Hiện Vòng FOV",
+        AimFOV = "Bán Kính FOV", AimSmooth = "Độ Mượt Aimbot", TeamCheck = "Bỏ Qua Đồng Đội",
+        WallCheck = "Kiểm Tra Tường", EnableESP = "Công Tắc Chính ESP",
+        BoxESP = "Khung 2D", NameESP = "Tên & Khoảng Cách", HealthESP = "Thanh Máu",
+        TracerESP = "Đường Kẻ Theo Dõi", ChamsESP = "Nổi Bật 3D Chams",
+        ESPDist = "Khoảng Cách ESP Tối Đa", TPToPlayer = "Dịch Chuyển Tới Người Chơi",
+        SpectatePlayer = "Theo Dõi Người Chơi", RefreshPlayers = "Làm Mới Danh Sách",
+        SaveWaypoint = "Lưu Vị Trí Hiện Tại", LoadWaypoint = "Đến Vị Trí Đã Lưu",
+        CtrlClickTP = "Ctrl + Click Dịch Chuyển", SelectLanguage = "Ngôn Ngữ (16 Ngôn Ngữ)",
+        AutoDetectLang = "Tự Động Theo IP", MaskIPToggle = "Ẩn Địa Chỉ IP",
+        RefreshGeo = "Làm Mới Vị Trí IP", SaveConfig = "Lưu Cấu Hình JSON",
+        LoadConfig = "Tải Cấu Hình JSON", ResetConfig = "Đặt Lại Mặc Định",
+        UnloadHub = "ĐÓNG HUB & DỌN DẸP HỆ THỐNG"
+    },
+    th = {
+        TabMain = "หลัก & ป้องกัน", TabMovement = "การเคลื่อนที่", TabCombat = "การต่อสู้",
+        TabVisuals = "มองทะลุ ESP", TabTeleport = "เทเลพอร์ต", TabSettings = "ตั้งค่า",
+        SecDefense = "ระบบป้องกันตัวละคร", SecEmote = "ตัวเล่นท่าทาง Emote",
+        SecSpeed = "ความเร็วและฟิสิกส์ไร้ขีดจำกัด", SecFlight = "บินอิสระและทะลุกำแพง",
+        SecAimbot = "ตัวควบคุม Aimbot", SecESP = "ชุดแสดงผล ESP 3D/2D",
+        SecTPPlayer = "วาร์ปหาผู้เล่นและส่องกล้อง", SecTPWaypoints = "บันทึกพิกัดและคลิกวาร์ป",
+        SecLangGeo = "ภาษาและตำแหน่ง IP แบบเรียลไทม์", SecTheme = "ธีมหัวกะโหลก 3D หรูหรา",
+        SecSystem = "ล้างระบบและปิดการทำงาน",
+        AntiAFK = "ป้องกันเตะ AFK", AntiRagdoll = "ป้องกันตัวล้ม Ragdoll",
+        AntiFling = "โล่ป้องกันโดนเหวี่ยง", AntiVoid = "ป้องกันตกเหว",
+        AutoHeal = "รักษาเสถียรภาพตัวละคร", PlayEmote = "เล่นท่าทางที่เลือก",
+        StopEmote = "หยุดท่าทาง", EnableWalkSpeed = "เปิดใช้ความเร็วเดิน",
+        WalkSpeedInput = "ค่าความเร็วเดิน (ไม่จำกัด)", EnableJumpPower = "เปิดใช้พลังกระโดด",
+        JumpPowerInput = "ค่าพลังกระโดด (ไม่จำกัด)", EnableFly = "เปิดโหมดบินอิสระ",
+        FlySpeedInput = "ความเร็วบิน (ไม่จำกัด)", EnableNoclip = "เปิดเดินทะลุกำแพง",
+        EnableInfJump = "กระโดดไม่จำกัด", ResetPhysics = "รีเซ็ตฟิสิกส์ (16 / 50)",
+        EnableAimbot = "เปิด Aimbot (กดคลิกขวาค้าง)", ShowFOV = "แสดงวงกลม FOV",
+        AimFOV = "รัศมี FOV", AimSmooth = "ความนุ่มนวล Aimbot", TeamCheck = "ไม่ล็อกเพื่อนร่วมทีม",
+        WallCheck = "ตรวจสอบกำแพง", EnableESP = "สวิตช์หลัก ESP",
+        BoxESP = "กรอบ 2D", NameESP = "ชื่อและระยะห่าง", HealthESP = "แถบเลือด",
+        TracerESP = "เส้นลากหาผู้เล่น", ChamsESP = "ไฮไลต์ 3D Chams",
+        ESPDist = "ระยะ ESP สูงสุด", TPToPlayer = "วาร์ปไปหาผู้เล่น",
+        SpectatePlayer = "ส่องดูผู้เล่น", RefreshPlayers = "รีเฟรชรายชื่อ",
+        SaveWaypoint = "บันทึกตำแหน่งปัจจุบัน", LoadWaypoint = "วาร์ปไปตำแหน่งที่บันทึก",
+        CtrlClickTP = "กด Ctrl + คลิกเพื่อวาร์ป", SelectLanguage = "ภาษา (รองรับ 16 ภาษา)",
+        AutoDetectLang = "ตรวจจับภาษาจาก IP อัตโนมัติ", MaskIPToggle = "ซ่อนหมายเลข IP สาธารณะ",
+        RefreshGeo = "รีเฟรชตำแหน่งเรียลไทม์", SaveConfig = "บันทึกการตั้งค่า JSON",
+        LoadConfig = "โหลดการตั้งค่า JSON", ResetConfig = "คืนค่าเริ่มต้น",
+        UnloadHub = "ปิดฮับและล้างระบบทั้งหมด"
+    },
+    ms = {
+        TabMain = "Utama & Pertahanan", TabMovement = "Pergerakan", TabCombat = "Pertempuran",
+        TabVisuals = "Visual ESP", TabTeleport = "Teleportasi", TabSettings = "Tetapan",
+        SecDefense = "Pertahanan Watak", SecEmote = "Replikator Emote",
+        SecSpeed = "Kelajuan & Fizik Tanpa Had", SecFlight = "Terbang 6-DOF & Noclip",
+        SecAimbot = "Pengawal Aimbot", SecESP = "Sut Visual ESP 3D/2D",
+        SecTPPlayer = "Teleportasi Pemain", SecTPWaypoints = "Koordinat & Klik-TP",
+        SecLangGeo = "Bahasa & API Geolokasi", SecTheme = "Tema Tengkorak 3D Mewah",
+        SecSystem = "Pembersihan Sistem",
+        AntiAFK = "Anti-AFK Aktif", AntiRagdoll = "Perlindungan Anti-Ragdoll",
+        AntiFling = "Perisai Anti-Fling", AntiVoid = "Penyelamat Anti-Void",
+        AutoHeal = "Kestabilan Watak", PlayEmote = "Mainkan Emote",
+        StopEmote = "Hentikan Emote", EnableWalkSpeed = "Aktifkan WalkSpeed",
+        WalkSpeedInput = "Nilai WalkSpeed (Tanpa Had)", EnableJumpPower = "Aktifkan JumpPower",
+        JumpPowerInput = "Nilai JumpPower (Tanpa Had)", EnableFly = "Aktifkan Terbang Bebas",
+        FlySpeedInput = "Kelajuan Terbang (Tanpa Had)", EnableNoclip = "Aktifkan Noclip",
+        EnableInfJump = "Lompat Tanpa Had", ResetPhysics = "Tetap Semula Fizik (16 / 50)",
+        EnableAimbot = "Aktifkan Aimbot (Klik Kanan)", ShowFOV = "Papar Bulatan FOV",
+        AimFOV = "Jejari FOV", AimSmooth = "Kelancaran Aimbot", TeamCheck = "Abaikan Rakan Sepasukan",
+        WallCheck = "Semakan Dinding", EnableESP = "Suis Utama ESP",
+        BoxESP = "Kotak 2D", NameESP = "Nama & Jarak", HealthESP = "Bar Nyawa",
+        TracerESP = "Garis Pengesan", ChamsESP = "Sorotan 3D Chams",
+        ESPDist = "Jarak Maksimum ESP", TPToPlayer = "Teleport ke Pemain",
+        SpectatePlayer = "Tonton Pemain", RefreshPlayers = "Segar Semula Senarai",
+        SaveWaypoint = "Simpan Kedudukan Semasa", LoadWaypoint = "Pergi ke Kedudukan Disimpan",
+        CtrlClickTP = "Ctrl + Klik untuk Teleport", SelectLanguage = "Bahasa Antaramuka (16 Bahasa)",
+        AutoDetectLang = "Kesan Automatik dari IP", MaskIPToggle = "Sembunyikan Alamat IP",
+        RefreshGeo = "Segar Semula Lokasi IP", SaveConfig = "Simpan Konfigurasi JSON",
+        LoadConfig = "Muat Konfigurasi JSON", ResetConfig = "Tetap Semula Konfigurasi",
+        UnloadHub = "TUTUP HUB & BERSIHKAN SISTEM"
+    },
+    hi = {
+        TabMain = "मुख्य और रक्षा", TabMovement = "गति और भौतिकी", TabCombat = "युद्ध",
+        TabVisuals = "विज़ुअल ESP", TabTeleport = "टेलीपोर्ट", TabSettings = "सेटिंग्स",
+        SecDefense = "चरित्र सुरक्षा प्रणाली", SecEmote = "इमोट प्लेयर",
+        SecSpeed = "असीमित गति और भौतिकी", SecFlight = "फ्री फ्लाई और नोक्लिप",
+        SecAimbot = "एमबॉट नियंत्रक", SecESP = "3D/2D ESP ओवरले",
+        SecTPPlayer = "खिलाड़ी टेलीपोर्ट", SecTPWaypoints = "निर्देशांक और क्लिक-TP",
+        SecLangGeo = "भाषा और लाइव IP लोकेशन", SecTheme = "3D खोपड़ी थीम और कॉन्फ़िग",
+        SecSystem = "सिस्टम क्लीनअप",
+        AntiAFK = "एंटी-AFK सुरक्षा", AntiRagdoll = "एंटी-रैगडॉल",
+        AntiFling = "एंटी-फ्लिंग शील्ड", AntiVoid = "एंटी-वॉइड सुरक्षा",
+        AutoHeal = "चरित्र स्थिरता", PlayEmote = "इमोट चलाएं",
+        StopEmote = "इमोट रोकें", EnableWalkSpeed = "WalkSpeed सक्रिय करें",
+        WalkSpeedInput = "WalkSpeed मान (असीमित)", EnableJumpPower = "JumpPower सक्रिय करें",
+        JumpPowerInput = "JumpPower मान (असीमित)", EnableFly = "फ्री फ्लाई सक्रिय करें",
+        FlySpeedInput = "उड़ान गति (असीमित)", EnableNoclip = "नोक्लिप सक्रिय करें",
+        EnableInfJump = "असीमित छलांग", ResetPhysics = "भौतिकी रीसेट करें (16 / 50)",
+        EnableAimbot = "एमबॉट सक्रिय करें (राइट क्लिक)", ShowFOV = "FOV सर्कल दिखाएं",
+        AimFOV = "FOV त्रिज्या", AimSmooth = "एमबॉट स्मूथनेस", TeamCheck = "टीम जांच",
+        WallCheck = "दीवार जांच", EnableESP = "मुख्य ESP स्विच",
+        BoxESP = "2D बॉक्स", NameESP = "नाम और दूरी", HealthESP = "हेल्थ बार",
+        TracerESP = "ट्रेसर लाइनें", ChamsESP = "3D चैंप्स हाइलाइट",
+        ESPDist = "अधिकतम ESP दूरी", TPToPlayer = "खिलाड़ी पर टेलीपोर्ट करें",
+        SpectatePlayer = "खिलाड़ी को देखें", RefreshPlayers = "सूची रीफ़्रेश करें",
+        SaveWaypoint = "वर्तमान स्थान सहेजें", LoadWaypoint = "सहेजे गए स्थान पर जाएं",
+        CtrlClickTP = "Ctrl + क्लिक टेलीपोर्ट", SelectLanguage = "भाषा चुनें (16 भाषाएं)",
+        AutoDetectLang = "IP से स्वचालित भाषा", MaskIPToggle = "सार्वजनिक IP छुपाएं",
+        RefreshGeo = "लोकेशन रीफ़्रेश करें", SaveConfig = "JSON कॉन्फ़िग सहेजें",
+        LoadConfig = "JSON कॉन्फ़िग लोड करें", ResetConfig = "डिफ़ॉल्ट रीसेट करें",
+        UnloadHub = "हब बंद करें और सिस्टम साफ करें"
+    }
+}
+
+function GeoLangAPI:T(key)
+    local dict = self.Translations[self.CurrentLang] or self.Translations.en
+    return dict[key] or self.Translations.en[key] or key
+end
+
+function GeoLangAPI:BindText(textObj, key, prefix, suffix)
+    table.insert(self.BoundElements, {
+        Object = textObj,
+        Key = key,
+        Prefix = prefix or "",
+        Suffix = suffix or ""
+    })
+    if textObj and textObj.Parent then
+        textObj.Text = (prefix or "") .. self:T(key) .. (suffix or "")
+    end
+end
+
+function GeoLangAPI:SetLanguage(langCode)
+    if langCode == "auto" then
+        local mapped = self.CountryToLang[self.GeoData.CountryCode] or "en"
+        self.CurrentLang = mapped
+    elseif self.Translations[langCode] then
+        self.CurrentLang = langCode
+    else
+        self.CurrentLang = "en"
     end
 
-    local pos = resolvedCF.Position
+    for _, item in ipairs(self.BoundElements) do
+        pcall(function()
+            if item.Object and item.Object.Parent then
+                item.Object.Text = item.Prefix .. self:T(item.Key) .. item.Suffix
+            end
+        end)
+    end
+end
+
+function GeoLangAPI:FormatIPDisplay()
+    local ip = self.GeoData.IP or "Unknown"
+    if State.MaskIP and ip:find("%.") then
+        local parts = ip:split(".")
+        if #parts == 4 then
+            ip = parts[1] .. "." .. parts[2] .. ".***.***"
+        end
+    elseif State.MaskIP and #ip > 6 then
+        ip = ip:sub(1, 6) .. "****"
+    end
+    return ip
+end
+
+function GeoLangAPI:NotifyGeoListeners()
+    for _, cb in ipairs(self.OnGeoUpdated) do
+        pcall(cb, self.GeoData)
+    end
+end
+
+function GeoLangAPI:FetchAsync()
+    self.GeoData.Status = "Syncing"
+    self:NotifyGeoListeners()
+
+    task.spawn(function()
+        if not CleanupManager.Alive then return end
+
+        local parsed = nil
+        -- Primary endpoint: ip-api.com
+        local ok1, body1 = Env.HttpGet("http://ip-api.com/json/?fields=status,country,countryCode,regionName,city,isp,query")
+        if ok1 and body1 then
+            local s1, data1 = pcall(function()
+                return Services.HttpService:JSONDecode(body1)
+            end)
+            if s1 and type(data1) == "table" and data1.status == "success" then
+                parsed = {
+                    IP = tostring(data1.query or "Unknown"),
+                    City = tostring(data1.city or "Unknown"),
+                    Region = tostring(data1.regionName or ""),
+                    Country = tostring(data1.country or "Global"),
+                    CountryCode = tostring(data1.countryCode or "US"):upper(),
+                    ISP = tostring(data1.isp or "Unknown"),
+                    Status = "Live"
+                }
+            end
+        end
+
+        -- Fallback endpoint: ipwho.is
+        if not parsed then
+            local ok2, body2 = Env.HttpGet("https://ipwho.is/")
+            if ok2 and body2 then
+                local s2, data2 = pcall(function()
+                    return Services.HttpService:JSONDecode(body2)
+                end)
+                if s2 and type(data2) == "table" and data2.success ~= false then
+                    parsed = {
+                        IP = tostring(data2.ip or "Unknown"),
+                        City = tostring(data2.city or "Unknown"),
+                        Region = tostring(data2.region or ""),
+                        Country = tostring(data2.country or "Global"),
+                        CountryCode = tostring(data2.country_code or "US"):upper(),
+                        ISP = tostring((data2.connection and data2.connection.isp) or "Unknown"),
+                        Status = "Live"
+                    }
+                end
+            end
+        end
+
+        if parsed then
+            self.GeoData = parsed
+        else
+            self.GeoData.IP = "Offline / Local"
+            self.GeoData.City = "Roblox Client"
+            self.GeoData.Country = "Global"
+            self.GeoData.CountryCode = "US"
+            self.GeoData.ISP = "Local Session"
+            self.GeoData.Status = "Fallback"
+        end
+
+        if State.Language == "auto" then
+            self:SetLanguage("auto")
+        end
+        self:NotifyGeoListeners()
+    end)
+end
+
+-- ============================================================================
+-- 5. LUXURY 3D HD SKULL VIEWPORT RENDERER & ANIMATED VERIFIED BADGE
+-- ============================================================================
+local Themes = {
+    RoyalGold = {
+        BgPrimary = Color3.fromRGB(11, 12, 16),
+        BgSecondary = Color3.fromRGB(18, 20, 27),
+        BgCard = Color3.fromRGB(24, 27, 36),
+        Accent = Color3.fromRGB(245, 194, 66),
+        AccentAlt = Color3.fromRGB(255, 224, 130),
+        TextPrimary = Color3.fromRGB(245, 247, 252),
+        TextMuted = Color3.fromRGB(152, 160, 179),
+        Stroke = Color3.fromRGB(58, 52, 38)
+    },
+    CrimsonSkull = {
+        BgPrimary = Color3.fromRGB(13, 10, 13),
+        BgSecondary = Color3.fromRGB(22, 16, 21),
+        BgCard = Color3.fromRGB(30, 21, 28),
+        Accent = Color3.fromRGB(239, 68, 68),
+        AccentAlt = Color3.fromRGB(252, 165, 165),
+        TextPrimary = Color3.fromRGB(248, 245, 246),
+        TextMuted = Color3.fromRGB(175, 150, 158),
+        Stroke = Color3.fromRGB(68, 34, 42)
+    },
+    CyberCyan = {
+        BgPrimary = Color3.fromRGB(10, 14, 19),
+        BgSecondary = Color3.fromRGB(15, 22, 30),
+        BgCard = Color3.fromRGB(20, 30, 41),
+        Accent = Color3.fromRGB(34, 211, 238),
+        AccentAlt = Color3.fromRGB(165, 243, 252),
+        TextPrimary = Color3.fromRGB(242, 249, 252),
+        TextMuted = Color3.fromRGB(145, 170, 185),
+        Stroke = Color3.fromRGB(32, 62, 76)
+    },
+    EmeraldVenom = {
+        BgPrimary = Color3.fromRGB(10, 15, 13),
+        BgSecondary = Color3.fromRGB(15, 24, 20),
+        BgCard = Color3.fromRGB(21, 33, 28),
+        Accent = Color3.fromRGB(16, 185, 129),
+        AccentAlt = Color3.fromRGB(110, 231, 183),
+        TextPrimary = Color3.fromRGB(242, 252, 247),
+        TextMuted = Color3.fromRGB(146, 178, 163),
+        Stroke = Color3.fromRGB(32, 68, 54)
+    },
+    PhantomViolet = {
+        BgPrimary = Color3.fromRGB(13, 11, 19),
+        BgSecondary = Color3.fromRGB(21, 18, 31),
+        BgCard = Color3.fromRGB(28, 24, 42),
+        Accent = Color3.fromRGB(168, 85, 247),
+        AccentAlt = Color3.fromRGB(216, 180, 254),
+        TextPrimary = Color3.fromRGB(246, 243, 253),
+        TextMuted = Color3.fromRGB(163, 152, 186),
+        Stroke = Color3.fromRGB(56, 42, 82)
+    }
+}
+
+local ActiveTheme = Themes[State.AccentPreset] or Themes.RoyalGold
+
+local Utils = {}
+
+function Utils.Create(className, props, children)
+    local inst = Instance.new(className)
+    if props then
+        for k, v in pairs(props) do
+            if k ~= "Parent" then
+                inst[k] = v
+            end
+        end
+    end
+    if children then
+        for _, child in ipairs(children) do
+            child.Parent = inst
+        end
+    end
+    if props and props.Parent then
+        inst.Parent = props.Parent
+    end
+    return inst
+end
+
+function Utils.Corner(parent, radius)
+    return Utils.Create("UICorner", {
+        CornerRadius = UDim.new(0, radius or 8),
+        Parent = parent
+    })
+end
+
+function Utils.Stroke(parent, color, thickness, transparency)
+    return Utils.Create("UIStroke", {
+        Color = color or ActiveTheme.Stroke,
+        Thickness = thickness or 1,
+        Transparency = transparency or 0,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = parent
+    })
+end
+
+-- Luxury 3D HD Skull Builder (Replaces legacy pumpkin asset with sculptural 3D Viewport skull)
+function Utils.CreateSkull3D(parent, sizeUDim2)
+    local container = Utils.Create("Frame", {
+        Name = "LuxurySkull3DContainer",
+        Size = sizeUDim2 or UDim2.new(0, 44, 0, 44),
+        BackgroundColor3 = Color3.fromRGB(16, 18, 25),
+        BorderSizePixel = 0,
+        Parent = parent
+    })
+    Utils.Corner(container, 10)
+    local containerStroke = Utils.Stroke(container, ActiveTheme.Accent, 1.4, 0.15)
+
+    local glowGradient = Utils.Create("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(36, 32, 24)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(18, 20, 28)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 13, 18))
+        }),
+        Rotation = 45,
+        Parent = container
+    })
+
+    local viewport = Utils.Create("ViewportFrame", {
+        Name = "SkullViewport3D",
+        Size = UDim2.new(1, -4, 1, -4),
+        Position = UDim2.new(0, 2, 0, 2),
+        BackgroundTransparency = 1,
+        Ambient = Color3.fromRGB(145, 145, 160),
+        LightColor = Color3.fromRGB(255, 244, 214),
+        LightDirection = Vector3.new(-0.5, -1, -0.8),
+        Parent = container
+    })
+
+    local worldModel = Utils.Create("WorldModel", {
+        Name = "SkullWorld",
+        Parent = viewport
+    })
+
+    local skullRig = Utils.Create("Model", {
+        Name = "LuxurySkullModel",
+        Parent = worldModel
+    })
+
+    local function makePart(name, size, cf, color, material, shape, reflectance)
+        local p = Instance.new("Part")
+        p.Name = name
+        p.Size = size
+        p.CFrame = cf
+        p.Color = color
+        p.Material = material or Enum.Material.SmoothPlastic
+        p.Shape = shape or Enum.PartType.Block
+        p.Reflectance = reflectance or 0.15
+        p.Anchored = true
+        p.CanCollide = false
+        p.CastShadow = false
+        p.Parent = skullRig
+        return p
+    end
+
+    local boneWhite = Color3.fromRGB(238, 236, 230)
+    local boneShade = Color3.fromRGB(205, 201, 194)
+    local socketDark = Color3.fromRGB(14, 14, 18)
+    local goldAccent = ActiveTheme.Accent
+
+    -- Sculpted 3D Cranium Dome
+    local cranium = makePart(
+        "Cranium",
+        Vector3.new(2.15, 1.95, 2.25),
+        CFrame.new(0, 0.42, 0.08),
+        boneWhite,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Ball,
+        0.18
+    )
+    skullRig.PrimaryPart = cranium
+
+    -- Brow Ridge (Upper Frontal Bone)
+    makePart(
+        "BrowRidge",
+        Vector3.new(1.78, 0.34, 0.72),
+        CFrame.new(0, 0.28, -0.78) * CFrame.Angles(math.rad(8), 0, 0),
+        boneWhite,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Block,
+        0.15
+    )
+
+    -- Left & Right Zygomatic Cheekbones
+    makePart(
+        "CheekLeft",
+        Vector3.new(0.58, 0.48, 0.85),
+        CFrame.new(-0.68, -0.15, -0.62) * CFrame.Angles(0, math.rad(18), math.rad(-8)),
+        boneShade,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Block,
+        0.12
+    )
+    makePart(
+        "CheekRight",
+        Vector3.new(0.58, 0.48, 0.85),
+        CFrame.new(0.68, -0.15, -0.62) * CFrame.Angles(0, math.rad(-18), math.rad(8)),
+        boneShade,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Block,
+        0.12
+    )
+
+    -- Deep Orbital Eye Sockets + Glowing Core Pupils
+    makePart(
+        "SocketLeft",
+        Vector3.new(0.52, 0.46, 0.36),
+        CFrame.new(-0.42, 0.04, -0.92),
+        socketDark,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Ball,
+        0
+    )
+    makePart(
+        "SocketRight",
+        Vector3.new(0.52, 0.46, 0.36),
+        CFrame.new(0.42, 0.04, -0.92),
+        socketDark,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Ball,
+        0
+    )
+
+    local eyeLeft = makePart(
+        "EyeGlowLeft",
+        Vector3.new(0.22, 0.22, 0.22),
+        CFrame.new(-0.42, 0.04, -0.98),
+        goldAccent,
+        Enum.Material.Neon,
+        Enum.PartType.Ball,
+        0
+    )
+    local eyeRight = makePart(
+        "EyeGlowRight",
+        Vector3.new(0.22, 0.22, 0.22),
+        CFrame.new(0.42, 0.04, -0.98),
+        goldAccent,
+        Enum.Material.Neon,
+        Enum.PartType.Ball,
+        0
+    )
+
+    -- Nasal Cavity
+    makePart(
+        "NasalCavity",
+        Vector3.new(0.26, 0.38, 0.32),
+        CFrame.new(0, -0.24, -0.96) * CFrame.Angles(math.rad(-12), 0, 0),
+        socketDark,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Block,
+        0
+    )
+
+    -- Maxilla & Mandible (Jaw + Sculpted Teeth)
+    makePart(
+        "Maxilla",
+        Vector3.new(1.12, 0.36, 0.95),
+        CFrame.new(0, -0.52, -0.52),
+        boneShade,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Block,
+        0.1
+    )
+    makePart(
+        "Mandible",
+        Vector3.new(1.04, 0.34, 1.02),
+        CFrame.new(0, -0.86, -0.44),
+        boneWhite,
+        Enum.Material.SmoothPlastic,
+        Enum.PartType.Block,
+        0.12
+    )
+
+    -- Luxury Metallic Crown Crest on Skull
+    local crownBand = makePart(
+        "LuxuryCrown",
+        Vector3.new(1.36, 0.22, 1.36),
+        CFrame.new(0, 1.24, 0.02) * CFrame.Angles(0, 0, math.rad(4)),
+        goldAccent,
+        Enum.Material.Neon,
+        Enum.PartType.Cylinder,
+        0.4
+    )
+    crownBand.Orientation = Vector3.new(0, 0, 90)
+
+    local vpCam = Instance.new("Camera")
+    vpCam.Name = "SkullCamera"
+    vpCam.FieldOfView = 38
+    vpCam.CFrame = CFrame.new(Vector3.new(0, 0.15, -4.1), Vector3.new(0, 0.1, 0))
+    vpCam.Parent = viewport
+    viewport.CurrentCamera = vpCam
+
+    -- Record base CFrames for smooth 3D rotation
+    local baseParts = {}
+    for _, part in ipairs(skullRig:GetChildren()) do
+        if part:IsA("BasePart") then
+            baseParts[part] = part.CFrame
+        end
+    end
+
     return {
-        Player = plr,
-        Character = char,
-        Humanoid = hum,
-        RootPart = rootPart,
-        CFrame = resolvedCF,
-        Position = pos,
-        IsStreamedIn = isStreamedIn,
-        WorldName = TeleportAPI.DetectSubWorldName(plr, pos),
+        Container = container,
+        Stroke = containerStroke,
+        Viewport = viewport,
+        Rig = skullRig,
+        BaseParts = baseParts,
+        EyeLeft = eyeLeft,
+        EyeRight = eyeRight,
+        Crown = crownBand,
+        Gradient = glowGradient
     }
 end
 
-function TeleportAPI.RequestStreamAt(pos, timeout)
-    if typeof(pos) ~= "Vector3" then return end
-    task.spawn(function()
-        pcall(function()
-            LocalPlayer:RequestStreamAroundAsync(pos, timeout or 5)
-        end)
-    end)
-end
-
-function TeleportAPI.EnsureRemoteViewAnchor(targetCF)
-    local anchor = State.SpectateAnchorPart
-    if not anchor or not anchor.Parent then
-        anchor = Instance.new("Part")
-        anchor.Name = "BSS_RemoteViewAnchor"
-        anchor.Size = Vector3.new(1, 1, 1)
-        anchor.Transparency = 1
-        anchor.Anchored = true
-        anchor.CanCollide = false
-        anchor.CanTouch = false
-        anchor.CanQuery = false
-        anchor.CastShadow = false
-        anchor.Parent = workspace
-        State.SpectateAnchorPart = anchor
-    end
-    if targetCF then
-        anchor.CFrame = targetCF
-    end
-    return anchor
-end
-
-function TeleportAPI.DestroyRemoteViewAnchor()
-    if State.SpectateAnchorPart then
-        pcall(function()
-            State.SpectateAnchorPart:Destroy()
-        end)
-        State.SpectateAnchorPart = nil
-    end
-    local leftover = workspace:FindFirstChild("BSS_RemoteViewAnchor")
-    if leftover then
-        pcall(function()
-            leftover:Destroy()
-        end)
-    end
-end
-
-function TeleportAPI.StartRemoteView(plr)
-    if not plr or plr == LocalPlayer then return false end
-    State.SpectatingPlayer = plr
-    State.SpectateStreamTick = 0
-
-    local info = TeleportAPI.ResolvePlayerState(plr)
-    local cam = workspace.CurrentCamera
-    if info then
-        TeleportAPI.RequestStreamAt(info.Position, 5)
-        local anchor = TeleportAPI.EnsureRemoteViewAnchor(info.CFrame * CFrame.new(0, 1.5, 0))
-        pcall(function()
-            LocalPlayer.ReplicationFocus = info.RootPart or anchor
-        end)
-        if cam then
-            cam.CameraType = Enum.CameraType.Custom
-            cam.CameraSubject = info.Humanoid or info.RootPart or anchor
-        end
-    else
-        local anchor = TeleportAPI.EnsureRemoteViewAnchor(CFrame.new(0, 10, 0))
-        if cam then
-            cam.CameraType = Enum.CameraType.Custom
-            cam.CameraSubject = anchor
-        end
-    end
-    return true, info
-end
-
-function TeleportAPI.StepRemoteView()
-    local specPlr = State.SpectatingPlayer
-    if not specPlr then return nil end
-    if not specPlr.Parent then
-        TeleportAPI.StopRemoteView(false)
-        return nil
-    end
-
-    local cam = workspace.CurrentCamera
-    local info = TeleportAPI.ResolvePlayerState(specPlr)
-    if info then
-        local anchor = TeleportAPI.EnsureRemoteViewAnchor(info.CFrame * CFrame.new(0, 1.5, 0))
-        local subject = info.Humanoid or info.RootPart or anchor
-
-        if cam and subject then
-            if cam.CameraType ~= Enum.CameraType.Custom then
-                cam.CameraType = Enum.CameraType.Custom
-            end
-            if cam.CameraSubject ~= subject then
-                cam.CameraSubject = subject
-            end
-        end
-
-        pcall(function()
-            LocalPlayer.ReplicationFocus = info.RootPart or anchor
-        end)
-
-        local now = os.clock()
-        if (now - State.SpectateStreamTick) >= 0.35 then
-            State.SpectateStreamTick = now
-            TeleportAPI.RequestStreamAt(info.Position, 4)
-        end
-    end
-    return info
-end
-
-function TeleportAPI.StopRemoteView(notifyUser)
-    State.SpectatingPlayer = nil
-    TeleportAPI.DestroyRemoteViewAnchor()
-    pcall(function()
-        LocalPlayer.ReplicationFocus = nil
-    end)
-    local cam = workspace.CurrentCamera
-    local _, myHum = Utils.GetCharacter(LocalPlayer)
-    if cam and myHum then
-        cam.CameraType = Enum.CameraType.Custom
-        cam.CameraSubject = myHum
-    end
-    if notifyUser then
-        Utils.Notify("View Dimatikan", "Kamera & fokus streaming kembali ke karakter Anda.", Theme.TextSecondary)
-    end
-end
-
--- Pembaca Posisi Dunia Universal Tanpa Batas Jarak (Mendukung Player lintas dunia, Model, BasePart, CFrame, & Vector3)
-function Utils.GetTargetWorldPosition(target)
-    if typeof(target) == "CFrame" then
-        return target.Position
-    elseif typeof(target) == "Vector3" then
-        return target
-    elseif typeof(target) == "Instance" then
-        if target:IsA("Player") then
-            local info = TeleportAPI.ResolvePlayerState(target)
-            return info and info.Position or nil
-        elseif target:IsA("Model") then
-            local root = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart or target:FindFirstChildWhichIsA("BasePart", true)
-            if root then return root.Position end
-            local okPivot, pivotCF = pcall(function() return target:GetPivot() end)
-            return (okPivot and typeof(pivotCF) == "CFrame") and pivotCF.Position or nil
-        elseif target:IsA("BasePart") then
-            return target.Position
-        end
-    end
-    return nil
-end
-
--- Teleport Jarak Tak Terbatas, Lintas Dunia Dalam Satu Map, Anti-Void & Streaming-API Safe
-function Utils.SafeTeleport(targetCFrame, targetPlayer)
-    local char, hum, root = Utils.GetCharacter(LocalPlayer)
-    if not char or not root then
-        return false, 0
-    end
-
-    local startPos = root.Position
-    local destCF = targetCFrame
-    if targetPlayer then
-        local liveInfo = TeleportAPI.ResolvePlayerState(targetPlayer)
-        if liveInfo then
-            destCF = liveInfo.CFrame * CFrame.new(0, 0.5, 3)
-        end
-    end
-
-    local destPos = destCF.Position
-    local travelDistance = (destPos - startPos).Magnitude
-    State.LastTeleportDistance = travelDistance
-
-    State.TeleportToken = State.TeleportToken + 1
-    local myToken = State.TeleportToken
-
-    -- 1. Lepas status duduk (Seat) jika sedang duduk agar tidak ditarik kembali oleh server
-    if hum then
-        hum.Sit = false
-        if hum.SeatPart then
-            local weld = hum.SeatPart:FindFirstChild("SeatWeld")
-            if weld then weld:Destroy() end
-        end
-    end
-
-    -- 2. Paksa Roblox Streaming API & ReplicationFocus memuat dunia/area tujuan (Jarak Tak Terbatas)
-    TeleportAPI.RequestStreamAt(destPos, 6)
-
-    -- 3. Simpan status Anchored asli dengan aman sebelum mengunci posisi sampai dunia tujuan selesai dimuat
-    if not State.IsTeleportLocking then
-        State.PreTeleportAnchored = root.Anchored
-        State.IsTeleportLocking = true
-    end
-
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.AssemblyLinearVelocity = Vector3.zero
-            part.AssemblyAngularVelocity = Vector3.zero
-        end
-    end
-
-    root.Anchored = true
-    char:PivotTo(destCF)
-
-    task.spawn(function()
-        local maxSteps = (travelDistance > 2500 or targetPlayer ~= nil) and 22 or 12
-        for step = 1, maxSteps do
-            RunService.Heartbeat:Wait()
-            if State.TeleportToken ~= myToken then
-                return
-            end
-
-            -- Sinkronisasi ulang posisi live pemain jika target berada di dunia lain yang baru saja selesai di-stream
-            if targetPlayer and targetPlayer.Parent then
-                local updatedInfo = TeleportAPI.ResolvePlayerState(targetPlayer)
-                if updatedInfo then
-                    destCF = updatedInfo.CFrame * CFrame.new(0, 0.5, 3)
-                    destPos = destCF.Position
-                end
-            end
-
-            if step == 4 or step == 10 or step == 16 then
-                TeleportAPI.RequestStreamAt(destPos, 4)
-            end
-
-            if char and char.Parent and root and root.Parent then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.AssemblyLinearVelocity = Vector3.zero
-                        part.AssemblyAngularVelocity = Vector3.zero
-                    end
-                end
-                char:PivotTo(destCF)
-            end
-        end
-
-        if State.TeleportToken == myToken then
-            if root and root.Parent then
-                root.Anchored = State.PreTeleportAnchored
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-            end
-            State.IsTeleportLocking = false
-        end
-    end)
-
-    return true, travelDistance
-end
-
--- ============================================================================
--- 4. 3D LIFELIKE HALLOWEEN PUMPKIN LOGO BUILDER (Pure Procedural 3D UI)
--- ============================================================================
-function Utils.CreatePumpkin3D(parent, pixelSize, position, anchorPoint, zIndex, isHero, isMenuPumpkin)
-    local z = zIndex or 20
-    local holder = Utils.Create("Frame", {
-        Name = "Pumpkin3D",
-        Size = UDim2.new(0, pixelSize, 0, pixelSize),
-        Position = position or UDim2.new(0, 0, 0, 0),
-        AnchorPoint = anchorPoint or Vector2.new(0, 0),
-        BackgroundTransparency = 1,
-        ZIndex = z,
-    }, parent)
-
-    local aura = Utils.Create("Frame", {
-        Size = UDim2.new(1.16, 0, 1.16, 0),
-        Position = UDim2.new(0.5, 0, 0.52, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = Color3.fromRGB(255, 115, 20),
-        BackgroundTransparency = isHero and 0.68 or 0.78,
+-- Animated Professional Blue Verified Badge
+function Utils.CreateVerifiedBadge(parent)
+    local badge = Utils.Create("Frame", {
+        Name = "VerifiedBadge",
+        Size = UDim2.new(0, 20, 0, 20),
+        BackgroundColor3 = Color3.fromRGB(29, 155, 240),
         BorderSizePixel = 0,
-        ZIndex = z,
-    }, holder)
-    Utils.AddCorner(aura, math.floor(pixelSize * 0.6))
+        Parent = parent
+    })
+    Utils.Corner(badge, 10)
+    local ringStroke = Utils.Stroke(badge, Color3.fromRGB(125, 211, 252), 1.3, 0.2)
 
-    local stem = Utils.Create("Frame", {
-        Size = UDim2.new(0.18, 0, 0.24, 0),
-        Position = UDim2.new(0.52, 0, 0.04, 0),
-        AnchorPoint = Vector2.new(0.5, 0),
-        Rotation = 12,
-        BackgroundColor3 = Color3.fromRGB(62, 112, 44),
-        BorderSizePixel = 0,
-        ZIndex = z + 1,
-    }, holder)
-    Utils.AddCorner(stem, 4)
-    Utils.Create("UIGradient", {
-        Rotation = 45,
+    local shimmer = Utils.Create("UIGradient", {
         Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(115, 175, 72)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(36, 68, 26)),
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 155, 240)),
+            ColorSequenceKeypoint.new(0.45, Color3.fromRGB(56, 189, 248)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(224, 242, 254)),
+            ColorSequenceKeypoint.new(0.55, Color3.fromRGB(56, 189, 248)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 116, 210))
         }),
-    }, stem)
-
-    local function makeRib(wScale, hScale, xScale, rot, cTop, cBot, ribZ)
-        local rib = Utils.Create("Frame", {
-            Size = UDim2.new(wScale, 0, hScale, 0),
-            Position = UDim2.new(xScale, 0, 0.56, 0),
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Rotation = rot,
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BorderSizePixel = 0,
-            ZIndex = ribZ,
-        }, holder)
-        Utils.AddCorner(rib, math.floor(pixelSize * 0.45))
-        Utils.Create("UIGradient", {
-            Rotation = 90,
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, cTop),
-                ColorSequenceKeypoint.new(0.55, cTop:Lerp(cBot, 0.35)),
-                ColorSequenceKeypoint.new(1, cBot),
-            }),
-        }, rib)
-        if isHero then
-            Utils.AddStroke(rib, Color3.fromRGB(70, 24, 4), 1, 0.45)
-        end
-        return rib
-    end
-
-    makeRib(0.36, 0.66, 0.21, -10, Color3.fromRGB(196, 74, 12), Color3.fromRGB(102, 32, 4), z + 1)
-    makeRib(0.36, 0.66, 0.79, 10, Color3.fromRGB(196, 74, 12), Color3.fromRGB(102, 32, 4), z + 1)
-    makeRib(0.40, 0.73, 0.33, -5, Color3.fromRGB(238, 102, 18), Color3.fromRGB(132, 44, 6), z + 2)
-    makeRib(0.40, 0.73, 0.67, 5, Color3.fromRGB(238, 102, 18), Color3.fromRGB(132, 44, 6), z + 2)
-    makeRib(0.44, 0.78, 0.50, 0, Color3.fromRGB(255, 162, 48), Color3.fromRGB(178, 62, 10), z + 3)
-
-    local shine = Utils.Create("Frame", {
-        Size = UDim2.new(0.16, 0, 0.12, 0),
-        Position = UDim2.new(0.44, 0, 0.27, 0),
-        Rotation = -18,
-        BackgroundColor3 = Color3.fromRGB(255, 232, 180),
-        BackgroundTransparency = 0.45,
-        BorderSizePixel = 0,
-        ZIndex = z + 4,
-    }, holder)
-    Utils.AddCorner(shine, 8)
-
-    local eyeLeft = Utils.Create("Frame", {
-        Size = UDim2.new(0.15, 0, 0.13, 0),
-        Position = UDim2.new(0.36, 0, 0.47, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Rotation = -14,
-        BackgroundColor3 = Color3.fromRGB(255, 224, 92),
-        BorderSizePixel = 0,
-        ZIndex = z + 5,
-    }, holder)
-    Utils.AddCorner(eyeLeft, 3)
-
-    local eyeRight = Utils.Create("Frame", {
-        Size = UDim2.new(0.15, 0, 0.13, 0),
-        Position = UDim2.new(0.64, 0, 0.47, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Rotation = 14,
-        BackgroundColor3 = Color3.fromRGB(255, 224, 92),
-        BorderSizePixel = 0,
-        ZIndex = z + 5,
-    }, holder)
-    Utils.AddCorner(eyeRight, 3)
-
-    local mouth = Utils.Create("Frame", {
-        Size = UDim2.new(0.42, 0, 0.12, 0),
-        Position = UDim2.new(0.50, 0, 0.68, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = Color3.fromRGB(255, 200, 64),
-        BorderSizePixel = 0,
-        ZIndex = z + 5,
-    }, holder)
-    Utils.AddCorner(mouth, 5)
-
-    if pixelSize >= 32 then
-        local tooth = Utils.Create("Frame", {
-            Size = UDim2.new(0.22, 0, 0.45, 0),
-            Position = UDim2.new(0.35, 0, 0, 0),
-            BackgroundColor3 = Color3.fromRGB(168, 56, 8),
-            BorderSizePixel = 0,
-            ZIndex = z + 6,
-        }, mouth)
-        Utils.AddCorner(tooth, 2)
-    end
-
-    table.insert(UI.Pumpkins, {
-        Holder = holder,
-        Aura = aura,
-        EyeLeft = eyeLeft,
-        EyeRight = eyeRight,
-        Mouth = mouth,
-        BasePos = position or UDim2.new(0, 0, 0, 0),
-        IsHero = isHero == true,
-        IsMenuPumpkin = isMenuPumpkin == true,
+        Rotation = 25,
+        Parent = badge
     })
 
-    return holder
-end
-
--- ============================================================================
--- 5. SMOOTH ADMIN FLIGHT & PHYSICS CLEANUP HELPERS
--- ============================================================================
-function Physics.CleanupFly()
-    for _, inst in ipairs({ Physics.FlyLV, Physics.FlyAO, Physics.FlyAttachment, Physics.FlyBV, Physics.FlyBG }) do
-        if inst then
-            pcall(function() inst:Destroy() end)
-        end
-    end
-    Physics.FlyLV = nil
-    Physics.FlyAO = nil
-    Physics.FlyAttachment = nil
-    Physics.FlyBV = nil
-    Physics.FlyBG = nil
-    Physics.FlyCurrentVel = Vector3.zero
-
-    local _, hum, root = Utils.GetCharacter()
-    if root then
-        for _, objName in ipairs({ "BSS_FlyLinearVel", "BSS_FlyAlignOri", "BSS_FlyAttachment", "BSS_FlyVelocity", "BSS_FlyGyro" }) do
-            local old = root:FindFirstChild(objName)
-            if old then old:Destroy() end
-        end
-        root.AssemblyLinearVelocity = Vector3.zero
-    end
-    if hum then
-        hum.PlatformStand = false
-        hum.AutoRotate = true
-        if hum:GetState() == Enum.HumanoidStateType.Physics then
-            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end
-    end
-end
-
-function Physics.StepSmoothFly(dt)
-    local _, hum, root = Utils.GetCharacter()
-    local cam = workspace.CurrentCamera
-    if not State.FlyEnabled or not hum or not root or not cam then
-        if Physics.FlyLV or Physics.FlyBV then
-            Physics.CleanupFly()
-        end
-        return
-    end
-
-    if hum.Sit then
-        hum.Sit = false
-    end
-
-    if not Physics.FlyAttachment or Physics.FlyAttachment.Parent ~= root then
-        Physics.CleanupFly()
-        local att = Instance.new("Attachment")
-        att.Name = "BSS_FlyAttachment"
-        att.Parent = root
-        Physics.FlyAttachment = att
-
-        local lv = Instance.new("LinearVelocity")
-        lv.Name = "BSS_FlyLinearVel"
-        lv.Attachment0 = att
-        lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
-        lv.RelativeTo = Enum.ActuatorRelativeTo.World
-        lv.MaxForce = 9e9
-        lv.VectorVelocity = Vector3.zero
-        lv.Parent = root
-        Physics.FlyLV = lv
-
-        local ao = Instance.new("AlignOrientation")
-        ao.Name = "BSS_FlyAlignOri"
-        ao.Attachment0 = att
-        ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
-        ao.RigidityEnabled = false
-        ao.MaxTorque = 9e9
-        ao.Responsiveness = 38
-        ao.CFrame = cam.CFrame
-        ao.Parent = root
-        Physics.FlyAO = ao
-    end
-
-    hum.PlatformStand = true
-    hum.AutoRotate = false
-    Physics.FlyAO.CFrame = cam.CFrame
-
-    -- Hitung arah gerak mulus dari kamera & input (PC WASD + Mobile Analog)
-    local forward = 0
-    local right = 0
-    local up = 0
-
-    if UserInputService:IsKeyDown(Enum.KeyCode.W) then forward = forward + 1 end
-    if UserInputService:IsKeyDown(Enum.KeyCode.S) then forward = forward - 1 end
-    if UserInputService:IsKeyDown(Enum.KeyCode.D) then right = right + 1 end
-    if UserInputService:IsKeyDown(Enum.KeyCode.A) then right = right - 1 end
-    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then up = up + 1 end
-    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-        up = up - 1
-    end
-
-    -- Dukungan Analog Mobile & Gamepad yang akurat bahkan saat kamera tegak lurus atas/bawah
-    if forward == 0 and right == 0 and hum.MoveDirection.Magnitude > 0.05 then
-        local camCF = cam.CFrame
-        local flatLook = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
-        local flatRight = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
-        if flatLook.Magnitude > 0.001 then
-            forward = hum.MoveDirection:Dot(flatLook.Unit)
-        else
-            local flatUp = Vector3.new(camCF.UpVector.X, 0, camCF.UpVector.Z)
-            if flatUp.Magnitude > 0.001 then
-                forward = hum.MoveDirection:Dot(flatUp.Unit) * (camCF.LookVector.Y < 0 and 1 or -1)
-            end
-        end
-        if flatRight.Magnitude > 0.001 then
-            right = hum.MoveDirection:Dot(flatRight.Unit)
-        end
-    end
-
-    local desiredDir = (cam.CFrame.LookVector * forward) + (cam.CFrame.RightVector * right) + Vector3.new(0, up, 0)
-    local targetVel = Vector3.zero
-    if desiredDir.Magnitude > 0.01 then
-        targetVel = desiredDir.Unit * State.FlySpeed
-    end
-
-    -- Interpolasi lembut seperti Admin Fly (tidak patah-patah & tidak mundur sendiri)
-    local alpha = math.clamp((dt or 0.016) * 14, 0.15, 1)
-    Physics.FlyCurrentVel = Physics.FlyCurrentVel:Lerp(targetVel, alpha)
-    if Physics.FlyCurrentVel.Magnitude < 0.05 and targetVel == Vector3.zero then
-        Physics.FlyCurrentVel = Vector3.zero
-    end
-
-    Physics.FlyLV.VectorVelocity = Physics.FlyCurrentVel
-    root.AssemblyAngularVelocity = Vector3.zero
-end
-
-function Physics.RestoreNoclip()
-    for part, origCollide in pairs(Physics.NoclipCache) do
-        if part and part.Parent and part:IsA("BasePart") then
-            part.CanCollide = origCollide
-        end
-    end
-    table.clear(Physics.NoclipCache)
-end
-
--- ============================================================================
--- 6. ROOT SCREENGUI & NOTIFICATION SYSTEM
--- ============================================================================
-local function getGuiParent()
-    if typeof(gethui) == "function" then
-        local ok, hui = pcall(gethui)
-        if ok and hui then return hui end
-    end
-    local okCore, coreGui = pcall(function()
-        return game:GetService("CoreGui")
-    end)
-    if okCore and coreGui then return coreGui end
-    return LocalPlayer:WaitForChild("PlayerGui")
-end
-
-do
-    UI.ScreenGui = Utils.Create("ScreenGui", {
-        Name = App.GuiName,
-        ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        IgnoreGuiInset = true,
-    }, getGuiParent())
-
-    UI.ToastContainer = Utils.Create("Frame", {
-        Name = "ToastContainer",
-        Size = UDim2.new(0, 300, 1, -24),
-        Position = UDim2.new(1, -316, 0, 12),
+    local checkLabel = Utils.Create("TextLabel", {
+        Name = "CheckIcon",
+        Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
-        ZIndex = 60,
-    }, UI.ScreenGui)
-
-    Utils.Create("UIListLayout", {
-        Padding = UDim.new(0, 8),
-        VerticalAlignment = Enum.VerticalAlignment.Bottom,
-        HorizontalAlignment = Enum.HorizontalAlignment.Right,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, UI.ToastContainer)
-end
-
-function Utils.Notify(title, message, color)
-    if not UI.ToastContainer or not UI.ToastContainer.Parent then return end
-    local accent = color or Theme.Accent
-
-    local toast = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 58),
-        BackgroundColor3 = Theme.BgSecondary,
-        BackgroundTransparency = 0.14,
-        BorderSizePixel = 0,
-        ZIndex = 61,
-    }, UI.ToastContainer)
-    Utils.AddCorner(toast, 9)
-    Utils.AddStroke(toast, accent, 1.1, 0.25)
-
-    local bar = Utils.Create("Frame", {
-        Size = UDim2.new(0, 4, 1, -12),
-        Position = UDim2.new(0, 6, 0, 6),
-        BackgroundColor3 = accent,
-        BorderSizePixel = 0,
-        ZIndex = 62,
-    }, toast)
-    Utils.AddCorner(bar, 2)
-
-    Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 20),
-        Position = UDim2.new(0, 18, 0, 7),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = title,
-        TextColor3 = Theme.TextPrimary,
+        Text = "✓",
+        TextColor3 = Color3.fromRGB(255, 255, 255),
         TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 62,
-    }, toast)
+        Font = Enum.Font.GothamBold,
+        Parent = badge
+    })
 
-    Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 24),
-        Position = UDim2.new(0, 18, 0, 27),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = message,
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 11,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 62,
-    }, toast)
+    return {
+        Badge = badge,
+        Stroke = ringStroke,
+        Shimmer = shimmer,
+        Icon = checkLabel
+    }
+end
 
-    task.delay(3.2, function()
+-- ============================================================================
+-- 6. GLASSMORPHIC UI COMPONENT FACTORY (6 COMPLETE TABS)
+-- ============================================================================
+local ScreenGui = Utils.Create("ScreenGui", {
+    Name = "BimSakSinHub_v3",
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true
+})
+Env.ProtectGui(ScreenGui)
+ScreenGui.Parent = Env.GetGuiParent()
+CleanupManager:AddInstance(ScreenGui)
+
+-- Toast Notification System
+local ToastContainer = Utils.Create("Frame", {
+    Name = "ToastContainer",
+    Size = UDim2.new(0, 310, 1, -24),
+    Position = UDim2.new(1, -326, 0, 12),
+    BackgroundTransparency = 1,
+    ZIndex = 50,
+    Parent = ScreenGui
+})
+Utils.Create("UIListLayout", {
+    Padding = UDim.new(0, 8),
+    VerticalAlignment = Enum.VerticalAlignment.Bottom,
+    HorizontalAlignment = Enum.HorizontalAlignment.Right,
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    Parent = ToastContainer
+})
+
+local function Notify(title, message, duration)
+    if not CleanupManager.Alive then return end
+    task.spawn(function()
+        local toast = Utils.Create("Frame", {
+            Size = UDim2.new(1, 0, 0, 56),
+            BackgroundColor3 = ActiveTheme.BgSecondary,
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            ZIndex = 51,
+            Parent = ToastContainer
+        })
+        Utils.Corner(toast, 10)
+        Utils.Stroke(toast, ActiveTheme.Accent, 1.2, 0.25)
+
+        Utils.Create("Frame", {
+            Size = UDim2.new(0, 4, 1, -14),
+            Position = UDim2.new(0, 7, 0, 7),
+            BackgroundColor3 = ActiveTheme.Accent,
+            BorderSizePixel = 0,
+            ZIndex = 52,
+            Parent = toast
+        })
+
+        Utils.Create("TextLabel", {
+            Size = UDim2.new(1, -24, 0, 20),
+            Position = UDim2.new(0, 18, 0, 7),
+            BackgroundTransparency = 1,
+            Text = tostring(title),
+            TextColor3 = ActiveTheme.AccentAlt,
+            TextSize = 13,
+            Font = Enum.Font.GothamBold,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 52,
+            Parent = toast
+        })
+
+        Utils.Create("TextLabel", {
+            Size = UDim2.new(1, -24, 0, 22),
+            Position = UDim2.new(0, 18, 0, 27),
+            BackgroundTransparency = 1,
+            Text = tostring(message),
+            TextColor3 = ActiveTheme.TextPrimary,
+            TextSize = 11,
+            Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ZIndex = 52,
+            Parent = toast
+        })
+
+        task.wait(duration or 3.2)
         if toast and toast.Parent then
-            Utils.Tween(toast, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                BackgroundTransparency = 1
-            })
-            task.wait(0.26)
+            local tw = Services.TweenService:Create(toast, TweenInfo.new(0.25), { BackgroundTransparency = 1 })
+            tw:Play()
+            tw.Completed:Wait()
             if toast and toast.Parent then
                 toast:Destroy()
             end
@@ -1340,4317 +1489,1886 @@ function Utils.Notify(title, message, color)
     end)
 end
 
--- ============================================================================
--- 7. BUILD MAIN WINDOW (HALLOWEEN LUXURY TRANSPARENT + 4 CORNER PUMPKINS)
--- ============================================================================
+-- Main Hub Window
+local MainWindow = Utils.Create("Frame", {
+    Name = "MainWindow",
+    Size = UDim2.new(0, 720, 0, 470),
+    Position = UDim2.new(0.5, -360, 0.5, -235),
+    BackgroundColor3 = ActiveTheme.BgPrimary,
+    BackgroundTransparency = State.WindowOpacity,
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+    Parent = ScreenGui
+})
+Utils.Corner(MainWindow, 14)
+local MainStroke = Utils.Stroke(MainWindow, ActiveTheme.Accent, 1.5, 0.25)
+
+-- Top Luxury Header Bar (Zero Sponsor Text — Pure BimSakSin Hub v3.0)
+local TopBar = Utils.Create("Frame", {
+    Name = "TopBar",
+    Size = UDim2.new(1, 0, 0, 62),
+    BackgroundColor3 = ActiveTheme.BgSecondary,
+    BackgroundTransparency = 0.04,
+    BorderSizePixel = 0,
+    Parent = MainWindow
+})
+Utils.Create("Frame", {
+    Size = UDim2.new(1, 0, 0, 1),
+    Position = UDim2.new(0, 0, 1, -1),
+    BackgroundColor3 = ActiveTheme.Stroke,
+    BorderSizePixel = 0,
+    Parent = TopBar
+})
+
+-- 3D HD Skull Emblem in Header
+local SkullVisual = Utils.CreateSkull3D(TopBar, UDim2.new(0, 46, 0, 46))
+SkullVisual.Container.Position = UDim2.new(0, 12, 0.5, -23)
+
+-- Title + Version Pill + Animated Blue Verified Checkmark Badge
+local TitleRow = Utils.Create("Frame", {
+    Name = "TitleRow",
+    Size = UDim2.new(0, 300, 0, 26),
+    Position = UDim2.new(0, 68, 0, 9),
+    BackgroundTransparency = 1,
+    Parent = TopBar
+})
+Utils.Create("UIListLayout", {
+    FillDirection = Enum.FillDirection.Horizontal,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 7),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    Parent = TitleRow
+})
+
+local HubTitleLabel = Utils.Create("TextLabel", {
+    Name = "HubTitle",
+    Size = UDim2.new(0, 134, 0, 24),
+    BackgroundTransparency = 1,
+    Text = "BimSakSin Hub",
+    TextColor3 = ActiveTheme.TextPrimary,
+    TextSize = 17,
+    Font = Enum.Font.GothamBlack,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    LayoutOrder = 1,
+    Parent = TitleRow
+})
+
+local VerifiedVisual = Utils.CreateVerifiedBadge(TitleRow)
+VerifiedVisual.Badge.LayoutOrder = 2
+
+local VersionBadge = Utils.Create("Frame", {
+    Name = "VersionBadge",
+    Size = UDim2.new(0, 48, 0, 20),
+    BackgroundColor3 = ActiveTheme.BgCard,
+    BorderSizePixel = 0,
+    LayoutOrder = 3,
+    Parent = TitleRow
+})
+Utils.Corner(VersionBadge, 6)
+local VersionStroke = Utils.Stroke(VersionBadge, ActiveTheme.Accent, 1, 0.35)
+local VersionLabel = Utils.Create("TextLabel", {
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundTransparency = 1,
+    Text = "v3.0",
+    TextColor3 = ActiveTheme.Accent,
+    TextSize = 11,
+    Font = Enum.Font.GothamBold,
+    Parent = VersionBadge
+})
+
+-- Subtitle / Edition Tagline (No Sponsors)
+local SubtitleLabel = Utils.Create("TextLabel", {
+    Name = "Subtitle",
+    Size = UDim2.new(0, 280, 0, 16),
+    Position = UDim2.new(0, 68, 0, 36),
+    BackgroundTransparency = 1,
+    Text = "3D HD Skull Edition • Unlimited Physics & GeoLang",
+    TextColor3 = ActiveTheme.TextMuted,
+    TextSize = 11,
+    Font = Enum.Font.GothamMedium,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = TopBar
+})
+
+-- Real-Time IP & Geolocation Live Pill in Header
+local GeoPill = Utils.Create("Frame", {
+    Name = "GeoPill",
+    Size = UDim2.new(0, 246, 0, 32),
+    Position = UDim2.new(1, -326, 0.5, -16),
+    BackgroundColor3 = ActiveTheme.BgCard,
+    BorderSizePixel = 0,
+    Parent = TopBar
+})
+Utils.Corner(GeoPill, 8)
+local GeoPillStroke = Utils.Stroke(GeoPill, ActiveTheme.Stroke, 1, 0.1)
+
+local GeoPulseDot = Utils.Create("Frame", {
+    Name = "GeoPulseDot",
+    Size = UDim2.new(0, 8, 0, 8),
+    Position = UDim2.new(0, 10, 0.5, -4),
+    BackgroundColor3 = Color3.fromRGB(34, 197, 94),
+    BorderSizePixel = 0,
+    Parent = GeoPill
+})
+Utils.Corner(GeoPulseDot, 4)
+
+local GeoHeaderLabel = Utils.Create("TextLabel", {
+    Name = "GeoHeaderLabel",
+    Size = UDim2.new(1, -28, 1, 0),
+    Position = UDim2.new(0, 24, 0, 0),
+    BackgroundTransparency = 1,
+    Text = "Syncing IP & Location...",
+    TextColor3 = ActiveTheme.TextPrimary,
+    TextSize = 11,
+    Font = Enum.Font.GothamSemibold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    Parent = GeoPill
+})
+
+-- Header Minimize & Quick Unload Buttons
+local MinimizeBtn = Utils.Create("TextButton", {
+    Name = "MinimizeBtn",
+    Size = UDim2.new(0, 30, 0, 30),
+    Position = UDim2.new(1, -72, 0.5, -15),
+    BackgroundColor3 = ActiveTheme.BgCard,
+    Text = "—",
+    TextColor3 = ActiveTheme.TextPrimary,
+    TextSize = 14,
+    Font = Enum.Font.GothamBold,
+    AutoButtonColor = true,
+    Parent = TopBar
+})
+Utils.Corner(MinimizeBtn, 8)
+Utils.Stroke(MinimizeBtn, ActiveTheme.Stroke, 1, 0.2)
+
+local CloseUnloadBtn = Utils.Create("TextButton", {
+    Name = "CloseUnloadBtn",
+    Size = UDim2.new(0, 30, 0, 30),
+    Position = UDim2.new(1, -36, 0.5, -15),
+    BackgroundColor3 = Color3.fromRGB(153, 27, 27),
+    Text = "✕",
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+    TextSize = 13,
+    Font = Enum.Font.GothamBold,
+    AutoButtonColor = true,
+    Parent = TopBar
+})
+Utils.Corner(CloseUnloadBtn, 8)
+
+-- Floating Re-Open Pill when Minimized
+local RestorePill = Utils.Create("TextButton", {
+    Name = "RestorePill",
+    Size = UDim2.new(0, 178, 0, 36),
+    Position = UDim2.new(0, 18, 0.5, -18),
+    BackgroundColor3 = ActiveTheme.BgSecondary,
+    Text = "💀 BimSakSin Hub v3.0",
+    TextColor3 = ActiveTheme.Accent,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+    Visible = false,
+    Parent = ScreenGui
+})
+Utils.Corner(RestorePill, 18)
+Utils.Stroke(RestorePill, ActiveTheme.Accent, 1.4, 0.1)
+
+CleanupManager:AddConnection(MinimizeBtn.MouseButton1Click:Connect(function()
+    MainWindow.Visible = false
+    RestorePill.Visible = true
+end))
+
+CleanupManager:AddConnection(RestorePill.MouseButton1Click:Connect(function()
+    MainWindow.Visible = true
+    RestorePill.Visible = false
+end))
+
+CleanupManager:AddConnection(CloseUnloadBtn.MouseButton1Click:Connect(function()
+    CleanupManager:Unload()
+end))
+
+-- Smooth Dragging for TopBar
 do
-    -- Floating Toggle: Logo Labu Halloween 3D Hidup (Selalu terlihat saat menu ditutup)
-    UI.FloatingToggle = Utils.Create("TextButton", {
-        Name = "FloatingPumpkinToggle",
-        Size = UDim2.new(0, 56, 0, 56),
-        Position = UDim2.new(0, 18, 0.5, -28),
-        BackgroundColor3 = Color3.fromRGB(18, 14, 28),
-        BackgroundTransparency = 0.25,
-        Text = "",
-        AutoButtonColor = false,
-        ZIndex = 45,
-    }, UI.ScreenGui)
-    Utils.AddCorner(UI.FloatingToggle, 28)
-    local floatStroke = Utils.AddStroke(UI.FloatingToggle, Theme.Accent, 1.6, 0.15)
-    Utils.RegisterAccent(floatStroke, "Color")
+    local dragging = false
+    local dragStart, startPos
 
-    Utils.CreatePumpkin3D(
-        UI.FloatingToggle,
-        44,
-        UDim2.new(0.5, 0, 0.5, 0),
-        Vector2.new(0.5, 0.5),
-        46,
-        true,
-        false
-    )
+    CleanupManager:AddConnection(TopBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainWindow.Position
+        end
+    end))
 
-    local initVp = UI.ScreenGui.AbsoluteSize
-    local initW = (initVp.X > 0) and math.min(650, math.max(320, initVp.X - 24)) or 650
-    local initH = (initVp.Y > 0) and math.min(435, math.max(240, initVp.Y - 24)) or 435
-    App.ExpandedWidth = initW
-    App.ExpandedHeight = initH
+    CleanupManager:AddConnection(Services.UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            MainWindow.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end))
 
-    -- Main Window Container (Transparan & Elegan)
-    UI.MainFrame = Utils.Create("Frame", {
-        Name = "MainFrame",
-        Size = UDim2.new(0, initW, 0, initH),
-        Position = UDim2.new(0.5, -math.floor(initW / 2), 0.5, -math.floor(initH / 2)),
-        BackgroundColor3 = Theme.BgPrimary,
-        BackgroundTransparency = 0.16,
-        BorderSizePixel = 0,
-        ClipsDescendants = false,
-        ZIndex = 10,
-    }, UI.ScreenGui)
-    Utils.AddCorner(UI.MainFrame, 14)
-    local mainStroke = Utils.AddStroke(UI.MainFrame, Theme.Accent, 1.5, 0.15)
-    Utils.RegisterAccent(mainStroke, "Color")
-
-    -- Gradien Kemewahan Halloween di Latar Belakang Panel
-    local bgGradient = Utils.Create("UIGradient", {
-        Rotation = 135,
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(34, 20, 48)),
-            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(16, 13, 24)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(42, 22, 16)),
-        }),
-    }, UI.MainFrame)
-    bgGradient.Name = "HalloweenLuxuryGradient"
-
-    -- 4 Logo Labu Halloween 3D di Setiap Sudut Panel Menu
-    Utils.CreatePumpkin3D(UI.MainFrame, 28, UDim2.new(0, -8, 0, -8), Vector2.new(0, 0), 30, false, true)
-    Utils.CreatePumpkin3D(UI.MainFrame, 28, UDim2.new(1, 8, 0, -8), Vector2.new(1, 0), 30, false, true)
-    Utils.CreatePumpkin3D(UI.MainFrame, 28, UDim2.new(0, -8, 1, 8), Vector2.new(0, 1), 30, false, true)
-    Utils.CreatePumpkin3D(UI.MainFrame, 28, UDim2.new(1, 8, 1, 8), Vector2.new(1, 1), 30, false, true)
-
-    -- Inner Clipping Frame
-    UI.InnerClip = Utils.Create("Frame", {
-        Name = "InnerClip",
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundTransparency = 1,
-        ClipsDescendants = true,
-        ZIndex = 11,
-    }, UI.MainFrame)
-    Utils.AddCorner(UI.InnerClip, 14)
-
-    -- Top Header Bar
-    UI.Topbar = Utils.Create("Frame", {
-        Name = "Topbar",
-        Size = UDim2.new(1, 0, 0, 54),
-        BackgroundColor3 = Theme.BgSecondary,
-        BackgroundTransparency = 0.22,
-        BorderSizePixel = 0,
-        ZIndex = 12,
-    }, UI.InnerClip)
-
-    Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 1),
-        Position = UDim2.new(0, 0, 1, -1),
-        BackgroundColor3 = Theme.Accent,
-        BackgroundTransparency = 0.45,
-        BorderSizePixel = 0,
-        ZIndex = 13,
-    }, UI.Topbar)
-
-    -- Emblem Labu 3D di Header Kiri
-    Utils.CreatePumpkin3D(UI.Topbar, 32, UDim2.new(0, 32, 0.5, 0), Vector2.new(0.5, 0.5), 14, true, true)
-
-    -- Judul Utama ("BimSakSin Hub v3.0") & Ucapan di bawahnya
-    local titleLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -142, 0, 22),
-        Position = UDim2.new(0, 54, 0, 6),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = App.Name,
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 16,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 14,
-    }, UI.Topbar)
-    UI.TitleLabel = titleLbl
-    Utils.RegisterText(titleLbl, true, Theme.TextPrimary)
-
-    local subLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -142, 0, 16),
-        Position = UDim2.new(0, 54, 0, 29),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = App.Subtitle,
-        TextColor3 = Color3.fromRGB(255, 198, 128),
-        TextSize = 11,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 14,
-    }, UI.Topbar)
-    UI.SubLabel = subLbl
-    Utils.RegisterText(subLbl, false, Color3.fromRGB(255, 198, 128))
-
-    -- Topbar Controls (Minimize & Close)
-    local function createTopBtn(text, offsetX, hoverColor)
-        local btn = Utils.Create("TextButton", {
-            Size = UDim2.new(0, 28, 0, 28),
-            Position = UDim2.new(1, offsetX, 0.5, -14),
-            BackgroundColor3 = Theme.BgControl,
-            BackgroundTransparency = 0.2,
-            Font = Enum.Font.GothamBold,
-            Text = text,
-            TextColor3 = Theme.TextPrimary,
-            TextSize = 13,
-            AutoButtonColor = false,
-            ZIndex = 15,
-        }, UI.Topbar)
-        Utils.AddCorner(btn, 7)
-        btn.MouseEnter:Connect(function()
-            Utils.Tween(btn, TweenInfo.new(0.15), { BackgroundColor3 = hoverColor })
-        end)
-        btn.MouseLeave:Connect(function()
-            Utils.Tween(btn, TweenInfo.new(0.15), { BackgroundColor3 = Theme.BgControl })
-        end)
-        return btn
-    end
-
-    UI.MinimizeBtn = createTopBtn("—", -76, Theme.Accent)
-    UI.CloseBtn = createTopBtn("✕", -42, Theme.Danger)
-
-    local initSidebarW = (initW < 500) and math.clamp(math.floor(initW * 0.30), 116, 166) or 166
-
-    -- Left Sidebar (Transparan)
-    UI.Sidebar = Utils.Create("Frame", {
-        Name = "Sidebar",
-        Size = UDim2.new(0, initSidebarW, 1, -54),
-        Position = UDim2.new(0, 0, 0, 54),
-        BackgroundColor3 = Theme.BgSecondary,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        ZIndex = 12,
-    }, UI.InnerClip)
-
-    Utils.Create("Frame", {
-        Size = UDim2.new(0, 1, 1, 0),
-        Position = UDim2.new(1, -1, 0, 0),
-        BackgroundColor3 = Theme.BorderSubtle,
-        BackgroundTransparency = 0.35,
-        BorderSizePixel = 0,
-        ZIndex = 13,
-    }, UI.Sidebar)
-
-    UI.SidebarScroll = Utils.Create("ScrollingFrame", {
-        Size = UDim2.new(1, -12, 1, -46),
-        Position = UDim2.new(0, 6, 0, 8),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ScrollBarThickness = 2,
-        ScrollBarImageColor3 = Theme.Accent,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ZIndex = 13,
-    }, UI.Sidebar)
-
-    Utils.Create("UIListLayout", {
-        Padding = UDim.new(0, 5),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, UI.SidebarScroll)
-
-    -- Sidebar Footer Badge
-    local footerBox = Utils.Create("Frame", {
-        Size = UDim2.new(1, -14, 0, 28),
-        Position = UDim2.new(0, 7, 1, -35),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        ZIndex = 13,
-    }, UI.Sidebar)
-    Utils.AddCorner(footerBox, 7)
-
-    local dot = Utils.Create("Frame", {
-        Size = UDim2.new(0, 8, 0, 8),
-        Position = UDim2.new(0, 10, 0.5, -4),
-        BackgroundColor3 = Theme.Success,
-        BorderSizePixel = 0,
-        ZIndex = 14,
-    }, footerBox)
-    Utils.AddCorner(dot, 4)
-
-    local statusLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -26, 1, 0),
-        Position = UDim2.new(0, 24, 0, 0),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = "Anti-Bug: AKTIF",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 14,
-    }, footerBox)
-    UI.StatusLabel = statusLbl
-    Utils.RegisterText(statusLbl, false, Theme.TextSecondary)
-
-    -- Content Area
-    UI.ContentContainer = Utils.Create("Frame", {
-        Name = "ContentContainer",
-        Size = UDim2.new(1, -initSidebarW, 1, -54),
-        Position = UDim2.new(0, initSidebarW, 0, 54),
-        BackgroundTransparency = 1,
-        ZIndex = 12,
-    }, UI.InnerClip)
-
-    -- Subtle Corner Resize Handle
-    UI.ResizeHandle = Utils.Create("TextButton", {
-        Name = "ResizeHandle",
-        Size = UDim2.new(0, 18, 0, 18),
-        Position = UDim2.new(1, -18, 1, -18),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.GothamBold,
-        Text = "◢",
-        TextColor3 = Theme.Accent,
-        TextTransparency = 0.35,
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 24,
-    }, UI.InnerClip)
-    Utils.RegisterAccent(UI.ResizeHandle, "TextColor3")
+    CleanupManager:AddConnection(Services.UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
 end
 
--- ============================================================================
--- 8. DRAGGING SUPPORT (Mouse & Multi-Touch Safe)
--- ============================================================================
-do
-    local function makeDraggable(dragHandle, targetFrame)
-        local dragging = false
-        local activeDragInput = nil
-        local dragStart = nil
-        local startPos = nil
+-- Navigation Sidebar & Content Pages
+local Sidebar = Utils.Create("Frame", {
+    Name = "Sidebar",
+    Size = UDim2.new(0, 174, 1, -62),
+    Position = UDim2.new(0, 0, 0, 62),
+    BackgroundColor3 = ActiveTheme.BgSecondary,
+    BackgroundTransparency = 0.08,
+    BorderSizePixel = 0,
+    Parent = MainWindow
+})
+Utils.Create("Frame", {
+    Size = UDim2.new(0, 1, 1, 0),
+    Position = UDim2.new(1, -1, 0, 0),
+    BackgroundColor3 = ActiveTheme.Stroke,
+    BorderSizePixel = 0,
+    Parent = Sidebar
+})
 
-        Utils.Track(dragHandle.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragging = true
-                activeDragInput = input
-                dragStart = input.Position
-                startPos = targetFrame.Position
-            end
-        end))
+local NavList = Utils.Create("Frame", {
+    Name = "NavList",
+    Size = UDim2.new(1, -16, 1, -56),
+    Position = UDim2.new(0, 8, 0, 10),
+    BackgroundTransparency = 1,
+    Parent = Sidebar
+})
+Utils.Create("UIListLayout", {
+    Padding = UDim.new(0, 6),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    Parent = NavList
+})
 
-        Utils.Track(UserInputService.InputChanged:Connect(function(input)
-            if not dragging or not activeDragInput or not dragStart or not startPos then
-                return
-            end
-            local isMatchingMouse = (activeDragInput.UserInputType == Enum.UserInputType.MouseButton1
-                and input.UserInputType == Enum.UserInputType.MouseMovement)
-            local isMatchingTouch = (input == activeDragInput)
+-- Sidebar Footer Status Badge
+local SidebarFooter = Utils.Create("Frame", {
+    Name = "SidebarFooter",
+    Size = UDim2.new(1, -16, 0, 36),
+    Position = UDim2.new(0, 8, 1, -44),
+    BackgroundColor3 = ActiveTheme.BgCard,
+    BorderSizePixel = 0,
+    Parent = Sidebar
+})
+Utils.Corner(SidebarFooter, 8)
+Utils.Stroke(SidebarFooter, ActiveTheme.Stroke, 1, 0.2)
 
-            if isMatchingMouse or isMatchingTouch then
-                local delta = input.Position - dragStart
-                targetFrame.Position = UDim2.new(
-                    startPos.X.Scale,
-                    startPos.X.Offset + delta.X,
-                    startPos.Y.Scale,
-                    startPos.Y.Offset + delta.Y
-                )
-            end
-        end))
+local PlayerFooterLabel = Utils.Create("TextLabel", {
+    Size = UDim2.new(1, -12, 1, 0),
+    Position = UDim2.new(0, 8, 0, 0),
+    BackgroundTransparency = 1,
+    Text = "@" .. LocalPlayer.Name .. " • RShift",
+    TextColor3 = ActiveTheme.TextMuted,
+    TextSize = 11,
+    Font = Enum.Font.GothamSemibold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    Parent = SidebarFooter
+})
 
-        Utils.Track(UserInputService.InputEnded:Connect(function(input)
-            if dragging and (input == activeDragInput or (activeDragInput and activeDragInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseButton1)) then
-                dragging = false
-                activeDragInput = nil
-            end
-        end))
+local ContentArea = Utils.Create("Frame", {
+    Name = "ContentArea",
+    Size = UDim2.new(1, -174, 1, -62),
+    Position = UDim2.new(0, 174, 0, 62),
+    BackgroundTransparency = 1,
+    Parent = MainWindow
+})
+
+-- Tab Registry & Page Factory
+local Tabs = {}
+local TabButtons = {}
+local ActiveTabName = nil
+
+local function SelectTab(tabId)
+    ActiveTabName = tabId
+    for id, page in pairs(Tabs) do
+        page.Visible = (id == tabId)
     end
-
-    makeDraggable(UI.Topbar, UI.MainFrame)
-    makeDraggable(UI.FloatingToggle, UI.FloatingToggle)
-end
-
--- ============================================================================
--- 9. REUSABLE UI COMPONENT BUILDERS
--- ============================================================================
-function Components.SwitchTab(tabName)
-    App.ActiveTab = tabName
-    for name, tabData in pairs(UI.Tabs) do
-        local isSelected = (name == tabName)
-        Utils.Tween(tabData.Button, TweenInfo.new(0.18), {
-            BackgroundColor3 = isSelected and Theme.BgControl or Theme.BgSecondary,
-            BackgroundTransparency = isSelected and 0.18 or 1,
-        })
-        tabData.Indicator.Visible = isSelected
-    end
-    for name, page in pairs(UI.Pages) do
-        page.Visible = (name == tabName)
+    for id, btnData in pairs(TabButtons) do
+        local isSelected = (id == tabId)
+        btnData.Button.BackgroundColor3 = isSelected and ActiveTheme.BgCard or ActiveTheme.BgSecondary
+        btnData.Button.BackgroundTransparency = isSelected and 0 or 0.4
+        btnData.Indicator.Visible = isSelected
+        btnData.Label.TextColor3 = isSelected and ActiveTheme.Accent or ActiveTheme.TextMuted
     end
 end
 
-function Components.CreateTab(name, iconText, order)
+local function CreateTab(tabId, iconText, langKey, order)
     local btn = Utils.Create("TextButton", {
-        Name = name .. "Tab",
-        Size = UDim2.new(1, 0, 0, 32),
-        BackgroundColor3 = Theme.BgControl,
-        BackgroundTransparency = 1,
+        Name = "TabBtn_" .. tabId,
+        Size = UDim2.new(1, 0, 0, 38),
+        BackgroundColor3 = ActiveTheme.BgSecondary,
+        BackgroundTransparency = 0.4,
         Text = "",
         AutoButtonColor = false,
         LayoutOrder = order,
-        ZIndex = 14,
-    }, UI.SidebarScroll)
-    Utils.AddCorner(btn, 7)
+        Parent = NavList
+    })
+    Utils.Corner(btn, 8)
 
     local indicator = Utils.Create("Frame", {
-        Size = UDim2.new(0, 3, 0, 18),
-        Position = UDim2.new(0, 4, 0.5, -9),
-        BackgroundColor3 = Theme.Accent,
+        Name = "Indicator",
+        Size = UDim2.new(0, 3, 0, 20),
+        Position = UDim2.new(0, 4, 0.5, -10),
+        BackgroundColor3 = ActiveTheme.Accent,
         BorderSizePixel = 0,
         Visible = false,
-        ZIndex = 15,
-    }, btn)
-    Utils.AddCorner(indicator, 2)
-    Utils.RegisterAccent(indicator, "BackgroundColor3")
+        Parent = btn
+    })
+    Utils.Corner(indicator, 2)
+
+    local icon = Utils.Create("TextLabel", {
+        Size = UDim2.new(0, 24, 1, 0),
+        Position = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1,
+        Text = iconText,
+        TextColor3 = ActiveTheme.AccentAlt,
+        TextSize = 14,
+        Font = Enum.Font.GothamBold,
+        Parent = btn
+    })
 
     local label = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -16, 1, 0),
-        Position = UDim2.new(0, 13, 0, 0),
+        Size = UDim2.new(1, -42, 1, 0),
+        Position = UDim2.new(0, 38, 0, 0),
         BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = iconText .. "  " .. name,
-        TextColor3 = Theme.TextPrimary,
+        Text = GeoLangAPI:T(langKey),
+        TextColor3 = ActiveTheme.TextMuted,
         TextSize = 12,
+        Font = Enum.Font.GothamSemibold,
         TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 15,
-    }, btn)
-    Utils.RegisterText(label, false, Theme.TextPrimary)
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = btn
+    })
+    GeoLangAPI:BindText(label, langKey)
 
     local page = Utils.Create("ScrollingFrame", {
-        Name = name .. "Page",
-        Size = UDim2.new(1, -14, 1, -14),
-        Position = UDim2.new(0, 7, 0, 7),
+        Name = "Page_" .. tabId,
+        Size = UDim2.new(1, -20, 1, -16),
+        Position = UDim2.new(0, 10, 0, 8),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 4,
-        ScrollBarImageColor3 = Theme.Accent,
+        ScrollBarImageColor3 = ActiveTheme.Accent,
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         Visible = false,
-        ZIndex = 13,
-    }, UI.ContentContainer)
-
+        Parent = ContentArea
+    })
     Utils.Create("UIListLayout", {
-        Padding = UDim.new(0, 8),
+        Padding = UDim.new(0, 10),
         SortOrder = Enum.SortOrder.LayoutOrder,
-    }, page)
-
+        Parent = page
+    })
     Utils.Create("UIPadding", {
+        PaddingBottom = UDim.new(0, 12),
         PaddingRight = UDim.new(0, 6),
-        PaddingBottom = UDim.new(0, 10),
-    }, page)
+        Parent = page
+    })
 
-    btn.MouseButton1Click:Connect(function()
-        Components.SwitchTab(name)
-    end)
-
-    UI.Tabs[name] = {
+    Tabs[tabId] = page
+    TabButtons[tabId] = {
         Button = btn,
-        Label = label,
         Indicator = indicator,
+        Icon = icon,
+        Label = label
     }
-    UI.Pages[name] = page
+
+    CleanupManager:AddConnection(btn.MouseButton1Click:Connect(function()
+        SelectTab(tabId)
+    end))
+
     return page
 end
 
-function Components.AddSectionHeader(parent, title, order)
-    local lbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 20),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = "🎃 " .. string.upper(title),
-        TextColor3 = Theme.Accent,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = order,
-        ZIndex = 14,
-    }, parent)
-    Utils.RegisterAccent(lbl, "TextColor3")
-    return lbl
-end
+-- Reusable UI Control Builders
+local UIControls = {}
 
-function Components.AddToggle(parent, title, subtitle, defaultVal, order, callback)
-    local enabled = defaultVal == true
-
-    local card = Utils.Create("Frame", {
+function UIControls.CreateSection(parentPage, langKey, order)
+    local section = Utils.Create("Frame", {
+        Name = "Section_" .. langKey,
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.26,
+        BackgroundColor3 = ActiveTheme.BgSecondary,
+        BackgroundTransparency = 0.08,
         BorderSizePixel = 0,
-        LayoutOrder = order,
-        ZIndex = 14,
-    }, parent)
-    Utils.AddCorner(card, 9)
-    Utils.AddStroke(card, Theme.BorderSubtle, 1, 0.3)
-
+        LayoutOrder = order or 1,
+        Parent = parentPage
+    })
+    Utils.Corner(section, 10)
+    Utils.Stroke(section, ActiveTheme.Stroke, 1, 0.15)
     Utils.Create("UIPadding", {
-        PaddingTop = UDim.new(0, 7),
-        PaddingBottom = UDim.new(0, 8),
-        PaddingLeft = UDim.new(0, 12),
-        PaddingRight = UDim.new(0, 12),
-    }, card)
-
-    local textBox = Utils.Create("Frame", {
-        Size = UDim2.new(1, -56, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        ZIndex = 15,
-    }, card)
-    Utils.Create("UIListLayout", {
-        Padding = UDim.new(0, 2),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, textBox)
-
-    local tLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 18),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = title,
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 1,
-        ZIndex = 15,
-    }, textBox)
-    Utils.RegisterText(tLbl, true, Theme.TextPrimary)
-
-    local sLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = subtitle,
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 11,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 2,
-        ZIndex = 15,
-    }, textBox)
-    Utils.RegisterText(sLbl, false, Theme.TextSecondary)
-
-    local switchTrack = Utils.Create("TextButton", {
-        Size = UDim2.new(0, 44, 0, 22),
-        Position = UDim2.new(1, -44, 0.5, -11),
-        BackgroundColor3 = enabled and Theme.Accent or Theme.BgControl,
-        Text = "",
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, card)
-    Utils.AddCorner(switchTrack, 11)
-
-    if enabled then
-        State.ActiveToggleTracks[switchTrack] = true
-    end
-
-    local knob = Utils.Create("Frame", {
-        Size = UDim2.new(0, 16, 0, 16),
-        Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0,
-        ZIndex = 16,
-    }, switchTrack)
-    Utils.AddCorner(knob, 8)
-
-    local function setState(newState, fireCallback)
-        enabled = newState
-        State.ActiveToggleTracks[switchTrack] = enabled and true or nil
-
-        Utils.Tween(switchTrack, TweenInfo.new(0.18), {
-            BackgroundColor3 = enabled and Theme.Accent or Theme.BgControl
-        })
-        Utils.Tween(knob, TweenInfo.new(0.18), {
-            Position = enabled and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-        })
-        if fireCallback and callback then
-            SafeEngine.Run(title, callback, enabled)
-        end
-    end
-
-    switchTrack.MouseButton1Click:Connect(function()
-        setState(not enabled, true)
-    end)
-
-    return {
-        SetState = setState,
-        GetState = function() return enabled end,
-    }
-end
-
-function Components.AddSlider(parent, title, minVal, maxVal, defaultVal, decimals, order, callback)
-    local currentVal = math.clamp(defaultVal, minVal, maxVal)
-    local precision = decimals or 0
-
-    local card = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 62),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.26,
-        BorderSizePixel = 0,
-        LayoutOrder = order,
-        ZIndex = 14,
-    }, parent)
-    Utils.AddCorner(card, 9)
-    Utils.AddStroke(card, Theme.BorderSubtle, 1, 0.3)
-
-    local tLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(0.65, 0, 0, 18),
-        Position = UDim2.new(0, 12, 0, 8),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = title,
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 15,
-    }, card)
-    Utils.RegisterText(tLbl, true, Theme.TextPrimary)
-
-    local function formatVal(v)
-        if precision <= 0 then
-            return tostring(math.floor(v + 0.5))
-        end
-        return string.format("%." .. tostring(precision) .. "f", v)
-    end
-
-    local valueLabel = Utils.Create("TextLabel", {
-        Size = UDim2.new(0.3, -12, 0, 18),
-        Position = UDim2.new(0.7, 0, 0, 8),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = formatVal(currentVal),
-        TextColor3 = Theme.Accent,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Right,
-        ZIndex = 15,
-    }, card)
-    Utils.RegisterAccent(valueLabel, "TextColor3")
-
-    local track = Utils.Create("TextButton", {
-        Size = UDim2.new(1, -24, 0, 8),
-        Position = UDim2.new(0, 12, 0, 38),
-        BackgroundColor3 = Theme.BgControl,
-        Text = "",
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, card)
-    Utils.AddCorner(track, 4)
-
-    local initRatio = (currentVal - minVal) / math.max(0.0001, (maxVal - minVal))
-    local fill = Utils.Create("Frame", {
-        Size = UDim2.new(initRatio, 0, 1, 0),
-        BackgroundColor3 = Theme.Accent,
-        BorderSizePixel = 0,
-        ZIndex = 16,
-    }, track)
-    Utils.AddCorner(fill, 4)
-    Utils.RegisterAccent(fill, "BackgroundColor3")
-
-    local thumb = Utils.Create("Frame", {
-        Size = UDim2.new(0, 14, 0, 14),
-        Position = UDim2.new(initRatio, -7, 0.5, -7),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 0,
-        ZIndex = 17,
-    }, track)
-    Utils.AddCorner(thumb, 7)
-
-    local sliding = false
-
-    local function setValue(val, fireCallback)
-        currentVal = math.clamp(val, minVal, maxVal)
-        if precision <= 0 then
-            currentVal = math.floor(currentVal + 0.5)
-        else
-            local mult = 10 ^ precision
-            currentVal = math.floor(currentVal * mult + 0.5) / mult
-        end
-        local ratio = (currentVal - minVal) / math.max(0.0001, (maxVal - minVal))
-        fill.Size = UDim2.new(ratio, 0, 1, 0)
-        thumb.Position = UDim2.new(ratio, -7, 0.5, -7)
-        valueLabel.Text = formatVal(currentVal)
-        if fireCallback and callback then
-            SafeEngine.Run(title, callback, currentVal)
-        end
-    end
-
-    local function updateFromInput(inputPos)
-        local trackWidth = track.AbsoluteSize.X
-        if trackWidth <= 0 then return end
-        local relX = math.clamp((inputPos.X - track.AbsolutePosition.X) / trackWidth, 0, 1)
-        local rawVal = minVal + (maxVal - minVal) * relX
-        setValue(rawVal, true)
-    end
-
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            sliding = true
-            updateFromInput(input.Position)
-        end
-    end)
-
-    Utils.Track(UserInputService.InputChanged:Connect(function(input)
-        if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            updateFromInput(input.Position)
-        end
-    end))
-
-    Utils.Track(UserInputService.InputEnded:Connect(function(input)
-        if sliding and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-            sliding = false
-        end
-    end))
-
-    return {
-        SetValue = setValue,
-        GetValue = function() return currentVal end,
-    }
-end
-
-function Components.AddButton(parent, title, subtitle, btnLabel, order, callback)
-    local card = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 48),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.26,
-        BorderSizePixel = 0,
-        LayoutOrder = order,
-        ZIndex = 14,
-    }, parent)
-    Utils.AddCorner(card, 9)
-    Utils.AddStroke(card, Theme.BorderSubtle, 1, 0.3)
-
-    local tLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -110, 0, 18),
-        Position = UDim2.new(0, 12, 0, 7),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = title,
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 15,
-    }, card)
-    Utils.RegisterText(tLbl, true, Theme.TextPrimary)
-
-    local sLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -110, 0, 14),
-        Position = UDim2.new(0, 12, 0, 26),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = subtitle,
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 15,
-    }, card)
-    Utils.RegisterText(sLbl, false, Theme.TextSecondary)
-
-    local actionBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0, 88, 0, 28),
-        Position = UDim2.new(1, -100, 0.5, -14),
-        BackgroundColor3 = Theme.Accent,
-        Font = Theme.FontBold,
-        Text = btnLabel,
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, card)
-    Utils.AddCorner(actionBtn, 7)
-    Utils.RegisterAccent(actionBtn, "BackgroundColor3")
-
-    actionBtn.MouseButton1Click:Connect(function()
-        if callback then
-            SafeEngine.Run(title, callback)
-        end
-    end)
-
-    return actionBtn
-end
-
-function Components.AddChipSelector(parent, title, options, defaultVal, order, callback)
-    local selected = defaultVal
-
-    local card = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.26,
-        BorderSizePixel = 0,
-        LayoutOrder = order,
-        ZIndex = 14,
-    }, parent)
-    Utils.AddCorner(card, 9)
-    Utils.AddStroke(card, Theme.BorderSubtle, 1, 0.3)
-
-    Utils.Create("UIPadding", {
-        PaddingTop = UDim.new(0, 8),
+        PaddingTop = UDim.new(0, 10),
         PaddingBottom = UDim.new(0, 10),
         PaddingLeft = UDim.new(0, 12),
         PaddingRight = UDim.new(0, 12),
-    }, card)
-
+        Parent = section
+    })
     Utils.Create("UIListLayout", {
+        Padding = UDim.new(0, 8),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = section
+    })
+
+    local header = Utils.Create("TextLabel", {
+        Name = "SectionHeader",
+        Size = UDim2.new(1, 0, 0, 20),
+        BackgroundTransparency = 1,
+        Text = GeoLangAPI:T(langKey),
+        TextColor3 = ActiveTheme.Accent,
+        TextSize = 13,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 0,
+        Parent = section
+    })
+    GeoLangAPI:BindText(header, langKey)
+
+    return section
+end
+
+function UIControls.CreateToggle(section, langKey, stateKey, order, onChanged)
+    local row = Utils.Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 34),
+        BackgroundColor3 = ActiveTheme.BgCard,
+        BorderSizePixel = 0,
+        LayoutOrder = order or 1,
+        Parent = section
+    })
+    Utils.Corner(row, 8)
+
+    local lbl = Utils.Create("TextLabel", {
+        Size = UDim2.new(1, -64, 1, 0),
+        Position = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1,
+        Text = GeoLangAPI:T(langKey),
+        TextColor3 = ActiveTheme.TextPrimary,
+        TextSize = 12,
+        Font = Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = row
+    })
+    GeoLangAPI:BindText(lbl, langKey)
+
+    local switchBg = Utils.Create("TextButton", {
+        Size = UDim2.new(0, 44, 0, 22),
+        Position = UDim2.new(1, -54, 0.5, -11),
+        BackgroundColor3 = State[stateKey] and ActiveTheme.Accent or Color3.fromRGB(48, 52, 66),
+        Text = "",
+        AutoButtonColor = false,
+        Parent = row
+    })
+    Utils.Corner(switchBg, 11)
+
+    local knob = Utils.Create("Frame", {
+        Size = UDim2.new(0, 16, 0, 16),
+        Position = State[stateKey] and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0,
+        Parent = switchBg
+    })
+    Utils.Corner(knob, 8)
+
+    local function setVisual(val)
+        switchBg.BackgroundColor3 = val and ActiveTheme.Accent or Color3.fromRGB(48, 52, 66)
+        Services.TweenService:Create(knob, TweenInfo.new(0.16), {
+            Position = val and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+        }):Play()
+    end
+
+    CleanupManager:AddConnection(switchBg.MouseButton1Click:Connect(function()
+        State[stateKey] = not State[stateKey]
+        setVisual(State[stateKey])
+        if onChanged then
+            onChanged(State[stateKey])
+        end
+    end))
+
+    return {
+        Row = row,
+        Refresh = function()
+            setVisual(State[stateKey])
+        end
+    }
+end
+
+-- Unlimited Numeric Input + Quick Preset Bar (Zero Upper Limit for Speed/Jump/Fly)
+function UIControls.CreateUnlimitedNumberInput(section, langKey, stateKey, presets, defaultFallback, order, onChanged)
+    local box = Utils.Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 66),
+        BackgroundColor3 = ActiveTheme.BgCard,
+        BorderSizePixel = 0,
+        LayoutOrder = order or 1,
+        Parent = section
+    })
+    Utils.Corner(box, 8)
+
+    local lbl = Utils.Create("TextLabel", {
+        Size = UDim2.new(1, -140, 0, 24),
+        Position = UDim2.new(0, 12, 0, 6),
+        BackgroundTransparency = 1,
+        Text = GeoLangAPI:T(langKey),
+        TextColor3 = ActiveTheme.TextPrimary,
+        TextSize = 12,
+        Font = Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = box
+    })
+    GeoLangAPI:BindText(lbl, langKey)
+
+    local inputBox = Utils.Create("TextBox", {
+        Size = UDim2.new(0, 118, 0, 26),
+        Position = UDim2.new(1, -128, 0, 5),
+        BackgroundColor3 = ActiveTheme.BgPrimary,
+        Text = tostring(State[stateKey]),
+        PlaceholderText = "Any number...",
+        TextColor3 = ActiveTheme.Accent,
+        PlaceholderColor3 = ActiveTheme.TextMuted,
+        TextSize = 12,
+        Font = Enum.Font.GothamBold,
+        ClearTextOnFocus = false,
+        Parent = box
+    })
+    Utils.Corner(inputBox, 6)
+    Utils.Stroke(inputBox, ActiveTheme.Accent, 1, 0.35)
+
+    local presetRow = Utils.Create("Frame", {
+        Size = UDim2.new(1, -24, 0, 24),
+        Position = UDim2.new(0, 12, 0, 36),
+        BackgroundTransparency = 1,
+        Parent = box
+    })
+    Utils.Create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
         Padding = UDim.new(0, 6),
         SortOrder = Enum.SortOrder.LayoutOrder,
-    }, card)
+        Parent = presetRow
+    })
 
-    local titleLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 16),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = title,
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 1,
-        ZIndex = 15,
-    }, card)
-    Utils.RegisterText(titleLbl, true, Theme.TextPrimary)
-
-    local grid = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        LayoutOrder = 2,
-        ZIndex = 15,
-    }, card)
-
-    Utils.Create("UIGridLayout", {
-        CellSize = UDim2.new(0.315, 0, 0, 26),
-        CellPadding = UDim2.new(0.025, 0, 0, 6),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, grid)
-
-    local chipButtons = {}
-
-    local function refreshChips()
-        for val, btn in pairs(chipButtons) do
-            if btn and btn.Parent then
-                local isAct = (val == selected)
-                btn.BackgroundColor3 = isAct and Theme.Accent or Theme.BgControl
-                btn.BackgroundTransparency = isAct and 0.05 or 0.2
+    local function applyNumber(num)
+        if type(num) == "number" and num == num and math.abs(num) ~= math.huge then
+            State[stateKey] = num
+            inputBox.Text = tostring(num)
+            if onChanged then
+                onChanged(num)
             end
+        else
+            inputBox.Text = tostring(State[stateKey] or defaultFallback)
         end
     end
 
-    table.insert(State.AccentCallbacks, function()
-        refreshChips()
-    end)
-
-    for idx, opt in ipairs(options) do
-        local labelText = type(opt) == "table" and opt.Label or tostring(opt)
-        local optVal = type(opt) == "table" and opt.Value or opt
-        local previewFont = type(opt) == "table" and opt.Font or nil
-        local swatchColor = type(opt) == "table" and opt.Color or nil
-
-        local chip = Utils.Create("TextButton", {
-            BackgroundColor3 = (optVal == selected) and Theme.Accent or Theme.BgControl,
-            BackgroundTransparency = (optVal == selected) and 0.05 or 0.2,
-            Font = previewFont or Theme.FontBold,
-            Text = labelText,
-            TextColor3 = Color3.new(1, 1, 1),
-            TextSize = 10,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            AutoButtonColor = false,
-            LayoutOrder = idx,
-            ZIndex = 16,
-        }, grid)
-        Utils.AddCorner(chip, 6)
-
-        if swatchColor then
-            local dot = Utils.Create("Frame", {
-                Size = UDim2.new(0, 8, 0, 8),
-                Position = UDim2.new(0, 6, 0.5, -4),
-                BackgroundColor3 = swatchColor,
-                BorderSizePixel = 0,
-                ZIndex = 17,
-            }, chip)
-            Utils.AddCorner(dot, 4)
+    CleanupManager:AddConnection(inputBox.FocusLost:Connect(function()
+        local parsed = tonumber(inputBox.Text)
+        if parsed then
+            applyNumber(parsed)
+        else
+            inputBox.Text = tostring(State[stateKey])
         end
+    end))
 
-        chipButtons[optVal] = chip
+    for idx, presetVal in ipairs(presets or { 16, 50, 150, 500, 2500, 10000 }) do
+        local pBtn = Utils.Create("TextButton", {
+            Size = UDim2.new(0, 66, 1, 0),
+            BackgroundColor3 = ActiveTheme.BgSecondary,
+            Text = tostring(presetVal),
+            TextColor3 = ActiveTheme.TextMuted,
+            TextSize = 11,
+            Font = Enum.Font.GothamSemibold,
+            LayoutOrder = idx,
+            Parent = presetRow
+        })
+        Utils.Corner(pBtn, 5)
+        Utils.Stroke(pBtn, ActiveTheme.Stroke, 1, 0.3)
 
-        chip.MouseButton1Click:Connect(function()
-            selected = optVal
-            refreshChips()
-            if callback then
-                SafeEngine.Run(title, callback, optVal)
-            end
-        end)
+        CleanupManager:AddConnection(pBtn.MouseButton1Click:Connect(function()
+            applyNumber(presetVal)
+        end))
     end
 
     return {
-        SetSelected = function(v)
-            selected = v
-            refreshChips()
-        end,
-        GetSelected = function() return selected end,
+        SetValue = applyNumber
     }
 end
 
--- ============================================================================
--- 10. UNIVERSAL PLAYER ESP ENGINE (Team/Enemy/Random + Distance + Health)
--- ============================================================================
-do
-    ESP.Folder = Utils.Create("Folder", {
-        Name = "BSS_ESP_Folder",
-    }, UI.ScreenGui)
-
-    function ESP.GetRandomPlayerColor(plr)
-        if not ESP.RandomColorMap[plr.UserId] then
-            local hue = ((plr.UserId * 137.508) % 360) / 360
-            ESP.RandomColorMap[plr.UserId] = Color3.fromHSV(hue, 0.85, 1)
-        end
-        return ESP.RandomColorMap[plr.UserId]
-    end
-
-    function ESP.ClassifyRelation(plr)
-        local hasTeams = (#Teams:GetTeams() > 0) and (LocalPlayer.Team ~= nil) and (plr.Team ~= nil)
-        if hasTeams then
-            if plr.Team == LocalPlayer.Team then
-                return "Ally"
-            else
-                return "Enemy"
-            end
-        end
-        return "Random"
-    end
-
-    function ESP.RemovePlayer(plr)
-        local entry = ESP.Entries[plr]
-        if entry then
-            if entry.Highlight then entry.Highlight:Destroy() end
-            if entry.Billboard then entry.Billboard:Destroy() end
-            ESP.Entries[plr] = nil
-        end
-    end
-
-    function ESP.ClearAll()
-        for plr, _ in pairs(ESP.Entries) do
-            ESP.RemovePlayer(plr)
-        end
-        if ESP.Folder then
-            ESP.Folder:ClearAllChildren()
-        end
-    end
-
-    function ESP.EnsurePlayer(plr)
-        if plr == LocalPlayer then return nil end
-        local entry = ESP.Entries[plr]
-        if not entry then
-            local hl = Utils.Create("Highlight", {
-                Name = "HL_" .. plr.Name,
-                DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-                FillTransparency = 0.52,
-                OutlineTransparency = 0.08,
-                Enabled = false,
-            }, ESP.Folder)
-
-            local bb = Utils.Create("BillboardGui", {
-                Name = "BB_" .. plr.Name,
-                Size = UDim2.new(0, 230, 0, 62),
-                StudsOffset = Vector3.new(0, 3.3, 0),
-                AlwaysOnTop = true,
-                MaxDistance = math.huge,
-                ResetOnSpawn = false,
-                Enabled = false,
-            }, ESP.Folder)
-
-            local bgBox = Utils.Create("Frame", {
-                Size = UDim2.new(0, 0, 0, 0),
-                AutomaticSize = Enum.AutomaticSize.XY,
-                Position = UDim2.new(0.5, 0, 0.5, 0),
-                AnchorPoint = Vector2.new(0.5, 0.5),
-                BackgroundColor3 = ESP.FontBgColor,
-                BackgroundTransparency = ESP.FontBgTransparency,
-                BorderSizePixel = 0,
-            }, bb)
-            Utils.AddCorner(bgBox, 6)
-            Utils.Create("UIPadding", {
-                PaddingTop = UDim.new(0, 3),
-                PaddingBottom = UDim.new(0, 4),
-                PaddingLeft = UDim.new(0, 7),
-                PaddingRight = UDim.new(0, 7),
-            }, bgBox)
-            Utils.Create("UIListLayout", {
-                HorizontalAlignment = Enum.HorizontalAlignment.Center,
-                Padding = UDim.new(0, 1),
-                SortOrder = Enum.SortOrder.LayoutOrder,
-            }, bgBox)
-
-            local nameLbl = Utils.Create("TextLabel", {
-                Size = UDim2.new(0, 0, 0, 15),
-                AutomaticSize = Enum.AutomaticSize.X,
-                BackgroundTransparency = 1,
-                Font = ESP.Font,
-                Text = plr.DisplayName,
-                TextColor3 = ESP.FontColor,
-                TextStrokeTransparency = 0.45,
-                TextSize = 12,
-                LayoutOrder = 1,
-            }, bgBox)
-
-            local distLbl = Utils.Create("TextLabel", {
-                Size = UDim2.new(0, 0, 0, 13),
-                AutomaticSize = Enum.AutomaticSize.X,
-                BackgroundTransparency = 1,
-                Font = ESP.Font,
-                Text = "Jarak: 0 m",
-                TextColor3 = ESP.DistanceColor,
-                TextStrokeTransparency = 0.45,
-                TextSize = 11,
-                LayoutOrder = 2,
-            }, bgBox)
-
-            local hpLbl = Utils.Create("TextLabel", {
-                Size = UDim2.new(0, 0, 0, 13),
-                AutomaticSize = Enum.AutomaticSize.X,
-                BackgroundTransparency = 1,
-                Font = ESP.Font,
-                Text = "Darah: 100/100",
-                TextColor3 = ESP.HealthColor,
-                TextStrokeTransparency = 0.45,
-                TextSize = 11,
-                LayoutOrder = 3,
-            }, bgBox)
-
-            entry = {
-                Highlight = hl,
-                Billboard = bb,
-                BgBox = bgBox,
-                NameLbl = nameLbl,
-                DistLbl = distLbl,
-                HpLbl = hpLbl,
-            }
-            ESP.Entries[plr] = entry
-        end
-        return entry
-    end
-
-    function ESP.UpdateAll()
-        if not ESP.Enabled then
-            for _, entry in pairs(ESP.Entries) do
-                entry.Highlight.Enabled = false
-                entry.Billboard.Enabled = false
-            end
-            return
-        end
-
-        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-        local camPos = workspace.CurrentCamera and workspace.CurrentCamera.CFrame.Position or Vector3.zero
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                local entry = ESP.EnsurePlayer(plr)
-                local char, hum, root = Utils.GetCharacter(plr)
-                local head = char and (char:FindFirstChild("Head") or root)
-
-                if char and root and head and entry then
-                    local rel = ESP.ClassifyRelation(plr)
-                    local shouldShow = true
-
-                    if ESP.Mode == "Enemy" and rel == "Ally" then
-                        shouldShow = false
-                    elseif ESP.Mode == "Ally" and rel ~= "Ally" then
-                        shouldShow = false
-                    end
-
-                    local originPos = myRoot and myRoot.Position or camPos
-                    local distStuds = (root.Position - originPos).Magnitude
-                    if distStuds > ESP.MaxDistance then
-                        shouldShow = false
-                    end
-
-                    if shouldShow then
-                        local mainColor = ESP.HighlightColor
-                        local tagText = "[PLAYER]"
-                        if ESP.Mode == "Random" or rel == "Random" then
-                            mainColor = (ESP.Mode == "Random") and ESP.GetRandomPlayerColor(plr) or ESP.HighlightColor
-                            tagText = "[PLAYER]"
-                        elseif rel == "Ally" then
-                            mainColor = ESP.AllyColor
-                            tagText = "[TEMAN]"
-                        elseif rel == "Enemy" then
-                            mainColor = ESP.EnemyColor
-                            tagText = "[MUSUH]"
-                        end
-
-                        entry.Highlight.Adornee = char
-                        entry.Highlight.FillColor = mainColor
-                        entry.Highlight.OutlineColor = mainColor:Lerp(Color3.new(1, 1, 1), 0.35)
-                        entry.Highlight.FillTransparency = 0.52
-                        entry.Highlight.OutlineTransparency = 0.08
-                        entry.Highlight.Enabled = ESP.ShowAvatar
-
-                        entry.Billboard.Adornee = head
-                        entry.Billboard.Enabled = true
-
-                        entry.BgBox.BackgroundColor3 = ESP.FontBgColor
-                        entry.BgBox.BackgroundTransparency = ESP.FontBgTransparency
-
-                        local resolvedNameColor = ESP.FontColor
-                        if ESP.FontAutoContrast then
-                            resolvedNameColor = Utils.GetContrastTextColor(ESP.FontBgColor):Lerp(mainColor, 0.35)
-                        end
-
-                        entry.NameLbl.Font = ESP.Font
-                        entry.NameLbl.TextColor3 = resolvedNameColor
-                        entry.NameLbl.Text = string.format("%s %s", tagText, plr.DisplayName)
-
-                        entry.DistLbl.Visible = ESP.ShowDistance
-                        entry.DistLbl.Font = ESP.Font
-                        entry.DistLbl.TextColor3 = ESP.DistanceColor
-                        entry.DistLbl.Text = string.format("Jarak: %.0f m", distStuds)
-
-                        if ESP.ShowHealth and hum and hum.MaxHealth > 0 then
-                            entry.HpLbl.Visible = true
-                            entry.HpLbl.Font = ESP.Font
-                            entry.HpLbl.TextColor3 = ESP.HealthColor
-                            entry.HpLbl.Text = string.format("Darah: %.0f / %.0f", math.max(0, hum.Health), hum.MaxHealth)
-                        else
-                            entry.HpLbl.Visible = false
-                        end
-                    else
-                        entry.Highlight.Enabled = false
-                        entry.Billboard.Enabled = false
-                    end
-                elseif entry then
-                    entry.Highlight.Enabled = false
-                    entry.Billboard.Enabled = false
-                end
-            end
-        end
-    end
-end
-
--- ============================================================================
--- 11. UNIVERSAL ITEM ESP & GENERATOR ESP (Unlimited Distance, Map-Adaptive)
--- ============================================================================
-do
-    ItemESP.Folder = Utils.Create("Folder", { Name = "BSS_ItemESP_Folder" }, UI.ScreenGui)
-    GeneratorESP.Folder = Utils.Create("Folder", { Name = "BSS_GenESP_Folder" }, UI.ScreenGui)
-
-    local function isPlayerDescendant(inst)
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr.Character and inst:IsDescendantOf(plr.Character) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function getAdorneePart(obj)
-        if not obj or not obj.Parent then return nil end
-        if obj:IsA("BasePart") then return obj end
-        if obj:IsA("Model") then
-            return obj.PrimaryPart or obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart", true)
-        end
-        if obj:IsA("Tool") then
-            return obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart", true)
-        end
-        return nil
-    end
-
-    local function isGeneratorObject(inst)
-        local n = string.lower(inst.Name)
-        if string.find(n, "generator", 1, true)
-            or string.find(n, "reactor", 1, true)
-            or string.find(n, "repairmachine", 1, true)
-            or string.find(n, "powerbox", 1, true)
-            or n == "gen"
-            or string.match(n, "^gen[%d_%-]")
-            or string.match(n, "[%d_%-]gen$") then
-            return true
-        end
-        local prompt = inst:FindFirstChildWhichIsA("ProximityPrompt", true)
-        if prompt then
-            local pText = string.lower((prompt.ActionText or "") .. " " .. (prompt.ObjectText or ""))
-            if string.find(pText, "generator", 1, true)
-                or ((string.find(pText, "repair", 1, true) or string.find(pText, "perbaiki", 1, true))
-                    and (string.find(pText, "gen", 1, true) or string.find(pText, "mesin", 1, true) or string.find(pText, "power", 1, true) or string.find(pText, "listrik", 1, true))) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function collectGeneratorStatusValues(genObj, entry)
-        local vals = {}
-        for _, desc in ipairs(genObj:GetDescendants()) do
-            local k = string.lower(desc.Name)
-            if desc:IsA("BoolValue") then
-                if string.find(k, "complete") or string.find(k, "fixed") or string.find(k, "done") or string.find(k, "repaired")
-                    or string.find(k, "repairing") or string.find(k, "working") or string.find(k, "inuse") then
-                    table.insert(vals, desc)
-                end
-            elseif desc:IsA("NumberValue") or desc:IsA("IntValue") then
-                if string.find(k, "progress") or string.find(k, "percent") or string.find(k, "charge") or string.find(k, "repair") or string.find(k, "power") then
-                    table.insert(vals, desc)
-                end
-            end
-        end
-        entry.StatusValues = vals
-    end
-
-    local function getGeneratorStatus(genObj, entry)
-        local progressPct = nil
-        local isCompleted = false
-        local isBeingWorked = false
-
-        -- 1. Baca Attributes pada generator
-        pcall(function()
-            for attrName, attrVal in pairs(genObj:GetAttributes()) do
-                local k = string.lower(attrName)
-                if type(attrVal) == "boolean" then
-                    if (string.find(k, "complete") or string.find(k, "fixed") or string.find(k, "done") or string.find(k, "repaired")) and attrVal == true then
-                        isCompleted = true
-                    elseif (string.find(k, "repairing") or string.find(k, "active") or string.find(k, "working") or string.find(k, "inuse")) and attrVal == true then
-                        isBeingWorked = true
-                    end
-                elseif type(attrVal) == "number" then
-                    if string.find(k, "progress") or string.find(k, "percent") or string.find(k, "charge") or string.find(k, "repair") or string.find(k, "power") then
-                        local maxAttr = genObj:GetAttribute("Max" .. attrName) or genObj:GetAttribute("MaxProgress") or 100
-                        if attrVal <= 1 and maxAttr == 100 and attrVal > 0 then
-                            progressPct = math.floor(attrVal * 100 + 0.5)
-                        else
-                            progressPct = math.floor((attrVal / math.max(1, maxAttr)) * 100 + 0.5)
-                        end
-                    end
-                end
-            end
-        end)
-
-        -- 2. Baca ValueObjects yang sudah di-cache di dalam generator (tanpa GetDescendants ulang)
-        if entry and entry.StatusValues then
-            for _, desc in ipairs(entry.StatusValues) do
-                if desc and desc.Parent then
-                    local k = string.lower(desc.Name)
-                    if desc:IsA("BoolValue") then
-                        if (string.find(k, "complete") or string.find(k, "fixed") or string.find(k, "done") or string.find(k, "repaired")) and desc.Value == true then
-                            isCompleted = true
-                        elseif (string.find(k, "repairing") or string.find(k, "working") or string.find(k, "inuse")) and desc.Value == true then
-                            isBeingWorked = true
-                        end
-                    elseif (desc:IsA("NumberValue") or desc:IsA("IntValue")) then
-                        if string.find(k, "progress") or string.find(k, "percent") or string.find(k, "charge") or string.find(k, "repair") or string.find(k, "power") then
-                            local maxObj = desc.Parent and (desc.Parent:FindFirstChild("Max" .. desc.Name) or desc.Parent:FindFirstChild("MaxProgress"))
-                            local maxV = (maxObj and (maxObj:IsA("NumberValue") or maxObj:IsA("IntValue")) and maxObj.Value > 0) and maxObj.Value or 100
-                            if desc.Value <= 1 and maxV == 100 and desc.Value > 0 then
-                                progressPct = math.floor(desc.Value * 100 + 0.5)
-                            else
-                                progressPct = math.floor((desc.Value / maxV) * 100 + 0.5)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        -- 3. Cek apakah ada pemain lain di dekat generator yang sedang memproses
-        local part = (entry and entry.Part) or getAdorneePart(genObj)
-        local workerName = nil
-        if part and not isCompleted then
-            for _, plr in ipairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer then
-                    local _, _, pRoot = Utils.GetCharacter(plr)
-                    if pRoot and (pRoot.Position - part.Position).Magnitude <= 11 then
-                        workerName = plr.DisplayName
-                        isBeingWorked = true
-                        break
-                    end
-                end
-            end
-        end
-
-        if isCompleted or (progressPct and progressPct >= 100) then
-            return "Status: Selesai Diproses (100%)"
-        elseif progressPct and progressPct > 0 then
-            if workerName then
-                return string.format("Status: Diproses %s (%d%%)", workerName, math.clamp(progressPct, 0, 100))
-            end
-            return string.format("Status: Sudah Diproses (%d%%)", math.clamp(progressPct, 0, 100))
-        elseif isBeingWorked and workerName then
-            return string.format("Status: Sedang Diproses (%s)", workerName)
-        else
-            return "Status: Belum Diproses (0%)"
-        end
-    end
-
-    local ignoreKeywords = { "door", "pintu", "seat", "chair", "kur", "elevator", "lift", "gate", "switch", "button" }
-    local candidatesInitialized = false
-
-    local function isItemCandidate(inst)
-        if inst:IsA("Tool") then
-            if Players:GetPlayerFromCharacter(inst.Parent) then
-                return false
-            end
-            return true
-        elseif (inst:IsA("Model") or inst:IsA("BasePart")) then
-            if inst:IsA("BasePart") and inst.Parent and inst.Parent:IsA("Model") and ItemESP.Candidates[inst.Parent] then
-                return false
-            end
-
-            local lowerName = string.lower(inst.Name)
-            for _, ikw in ipairs(ignoreKeywords) do
-                if string.find(lowerName, ikw, 1, true) then
-                    return false
-                end
-            end
-
-            local prompt = inst:IsA("Model") and inst:FindFirstChildWhichIsA("ProximityPrompt", true) or inst:FindFirstChildWhichIsA("ProximityPrompt")
-            local clickDet = inst:IsA("Model") and inst:FindFirstChildWhichIsA("ClickDetector", true) or inst:FindFirstChildWhichIsA("ClickDetector")
-            local parentName = inst.Parent and string.lower(inst.Parent.Name) or ""
-            local inItemFolder = string.find(parentName, "item")
-                or string.find(parentName, "drop")
-                or string.find(parentName, "loot")
-                or string.find(parentName, "pickup")
-                or string.find(parentName, "collect")
-                or string.find(parentName, "barang")
-                or string.find(parentName, "tool")
-
-            if prompt or clickDet or inItemFolder then
-                return true
-            end
-        end
-        return false
-    end
-
-    local function evaluateCandidate(inst)
-        if not inst or not inst.Parent or not inst:IsDescendantOf(workspace) then
-            ItemESP.Candidates[inst] = nil
-            GeneratorESP.Candidates[inst] = nil
-            return
-        end
-
-        if not (inst:IsA("Tool") or inst:IsA("Model") or inst:IsA("BasePart")) then
-            return
-        end
-
-        if (inst:IsA("Model") or inst:IsA("BasePart")) and isGeneratorObject(inst) then
-            local hasGenAncestor = false
-            local anc = inst.Parent
-            while anc and anc ~= workspace do
-                if (anc:IsA("Model") or anc:IsA("Folder")) and isGeneratorObject(anc) then
-                    hasGenAncestor = true
-                    break
-                end
-                anc = anc.Parent
-            end
-
-            if not hasGenAncestor then
-                GeneratorESP.Candidates[inst] = true
-            else
-                GeneratorESP.Candidates[inst] = nil
-            end
-            ItemESP.Candidates[inst] = nil
-            return
-        else
-            GeneratorESP.Candidates[inst] = nil
-        end
-
-        if isItemCandidate(inst) then
-            ItemESP.Candidates[inst] = true
-        else
-            ItemESP.Candidates[inst] = nil
-        end
-    end
-
-    local function ensureCandidatesInitialized()
-        if candidatesInitialized then return end
-        candidatesInitialized = true
-
-        -- Pemindaian awal berbasis batch agar map besar tidak mengalami micro-freeze
-        task.spawn(function()
-            local descendants = workspace:GetDescendants()
-            for i, inst in ipairs(descendants) do
-                if not ItemESP.Enabled and not GeneratorESP.Enabled then
-                    candidatesInitialized = false
-                    return
-                end
-                evaluateCandidate(inst)
-                if i % 1500 == 0 then
-                    RunService.Heartbeat:Wait()
-                end
-            end
-        end)
-
-        Utils.Track(workspace.DescendantAdded:Connect(function(desc)
-            evaluateCandidate(desc)
-            local parent = desc.Parent
-            if parent and parent ~= workspace then
-                evaluateCandidate(parent)
-                local grandParent = parent.Parent
-                if grandParent and grandParent ~= workspace and (desc:IsA("ProximityPrompt") or desc:IsA("ClickDetector")) then
-                    evaluateCandidate(grandParent)
-                end
-            end
-        end))
-
-        Utils.Track(workspace.DescendantRemoving:Connect(function(desc)
-            ItemESP.Candidates[desc] = nil
-            GeneratorESP.Candidates[desc] = nil
-
-            local itemEntry = ItemESP.Entries[desc]
-            if itemEntry then
-                if itemEntry.Billboard then itemEntry.Billboard:Destroy() end
-                ItemESP.Entries[desc] = nil
-            end
-
-            local genEntry = GeneratorESP.Entries[desc]
-            if genEntry then
-                if genEntry.Highlight then genEntry.Highlight:Destroy() end
-                if genEntry.Billboard then genEntry.Billboard:Destroy() end
-                if genEntry.DescConn then genEntry.DescConn:Disconnect() end
-                GeneratorESP.Entries[desc] = nil
-            end
-        end))
-    end
-
-    function ItemESP.ClearAll()
-        table.clear(ItemESP.Entries)
-        if ItemESP.Folder then
-            ItemESP.Folder:ClearAllChildren()
-        end
-    end
-
-    function GeneratorESP.ClearAll()
-        for _, entry in pairs(GeneratorESP.Entries) do
-            if entry.DescConn then
-                entry.DescConn:Disconnect()
-            end
-        end
-        table.clear(GeneratorESP.Entries)
-        if GeneratorESP.Folder then
-            GeneratorESP.Folder:ClearAllChildren()
-        end
-    end
-
-    function ItemESP.ScanAndRender()
-        if not ItemESP.Enabled then
-            if next(ItemESP.Entries) ~= nil then
-                ItemESP.ClearAll()
-            end
-            return
-        end
-
-        ensureCandidatesInitialized()
-
-        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-        local camPos = workspace.CurrentCamera and workspace.CurrentCamera.CFrame.Position or Vector3.zero
-        local originPos = myRoot and myRoot.Position or camPos
-
-        local activeSet = {}
-
-        for inst, _ in pairs(ItemESP.Candidates) do
-            if not inst or not inst.Parent or not inst:IsDescendantOf(workspace) then
-                ItemESP.Candidates[inst] = nil
-            elseif not isPlayerDescendant(inst) then
-                local part = getAdorneePart(inst)
-                if part and part:IsDescendantOf(workspace) then
-                    activeSet[inst] = true
-                    local entry = ItemESP.Entries[inst]
-                    if not entry then
-                        -- Tanpa latar belakang (TextLabel BackgroundTransparency = 1)
-                        local bb = Utils.Create("BillboardGui", {
-                            Name = "ItemBB",
-                            Size = UDim2.new(0, 210, 0, 38),
-                            StudsOffset = Vector3.new(0, 1.8, 0),
-                            AlwaysOnTop = true,
-                            MaxDistance = math.huge,
-                            ResetOnSpawn = false,
-                        }, ItemESP.Folder)
-
-                        local lbl = Utils.Create("TextLabel", {
-                            Size = UDim2.new(1, 0, 1, 0),
-                            BackgroundTransparency = 1,
-                            Font = ItemESP.Font,
-                            Text = inst.Name,
-                            TextColor3 = ItemESP.Color,
-                            TextStrokeColor3 = Color3.fromRGB(10, 10, 14),
-                            TextStrokeTransparency = 0.25,
-                            TextSize = 12,
-                        }, bb)
-
-                        entry = { Billboard = bb, Label = lbl, Part = part }
-                        ItemESP.Entries[inst] = entry
-                    end
-
-                    local dist = (part.Position - originPos).Magnitude
-                    entry.Billboard.Adornee = part
-                    entry.Billboard.Enabled = true
-                    entry.Label.Font = ItemESP.Font
-                    entry.Label.TextColor3 = ItemESP.Color
-                    entry.Label.BackgroundTransparency = 1
-                    entry.Label.Text = string.format("[BARANG] %s\nJarak: %.0f m", inst.Name, dist)
-                end
-            end
-        end
-
-        for inst, entry in pairs(ItemESP.Entries) do
-            if not activeSet[inst] or not inst.Parent then
-                if entry.Billboard then entry.Billboard:Destroy() end
-                ItemESP.Entries[inst] = nil
-            end
-        end
-    end
-
-    function GeneratorESP.ScanAndRender()
-        if not GeneratorESP.Enabled then
-            if next(GeneratorESP.Entries) ~= nil then
-                GeneratorESP.ClearAll()
-            end
-            return
-        end
-
-        ensureCandidatesInitialized()
-
-        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-        local camPos = workspace.CurrentCamera and workspace.CurrentCamera.CFrame.Position or Vector3.zero
-        local originPos = myRoot and myRoot.Position or camPos
-
-        local activeSet = {}
-
-        for inst, _ in pairs(GeneratorESP.Candidates) do
-            if not inst or not inst.Parent or not inst:IsDescendantOf(workspace) then
-                GeneratorESP.Candidates[inst] = nil
-            elseif not isPlayerDescendant(inst) then
-                local part = getAdorneePart(inst)
-                if part and part:IsDescendantOf(workspace) then
-                    activeSet[inst] = true
-                    local entry = GeneratorESP.Entries[inst]
-                    if not entry then
-                        local hl = Utils.Create("Highlight", {
-                            Name = "GenHL",
-                            DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-                            FillTransparency = 0.65,
-                            OutlineTransparency = 0.1,
-                        }, GeneratorESP.Folder)
-
-                        local bb = Utils.Create("BillboardGui", {
-                            Name = "GenBB",
-                            Size = UDim2.new(0, 240, 0, 54),
-                            StudsOffset = Vector3.new(0, 3.0, 0),
-                            AlwaysOnTop = true,
-                            MaxDistance = math.huge,
-                            ResetOnSpawn = false,
-                        }, GeneratorESP.Folder)
-
-                        local lbl = Utils.Create("TextLabel", {
-                            Size = UDim2.new(1, 0, 1, 0),
-                            BackgroundTransparency = 1,
-                            Font = GeneratorESP.Font,
-                            Text = inst.Name,
-                            TextColor3 = GeneratorESP.Color,
-                            TextStrokeColor3 = Color3.fromRGB(10, 10, 14),
-                            TextStrokeTransparency = 0.2,
-                            TextSize = 12,
-                        }, bb)
-
-                        entry = { Highlight = hl, Billboard = bb, Label = lbl, Part = part, StatusValues = {} }
-                        collectGeneratorStatusValues(inst, entry)
-                        entry.DescConn = Utils.Track(inst.DescendantAdded:Connect(function(d)
-                            if d:IsA("BoolValue") or d:IsA("NumberValue") or d:IsA("IntValue") then
-                                table.insert(entry.StatusValues, d)
-                            end
-                        end))
-                        GeneratorESP.Entries[inst] = entry
-                    end
-
-                    local dist = (part.Position - originPos).Magnitude
-                    local statusText = getGeneratorStatus(inst, entry)
-
-                    entry.Highlight.Adornee = inst
-                    entry.Highlight.FillColor = GeneratorESP.Color
-                    entry.Highlight.OutlineColor = GeneratorESP.Color
-                    entry.Highlight.Enabled = true
-
-                    entry.Billboard.Adornee = part
-                    entry.Billboard.Enabled = true
-                    entry.Label.Font = GeneratorESP.Font
-                    entry.Label.TextColor3 = GeneratorESP.Color
-                    entry.Label.Text = string.format("⚡ %s\nJarak: %.0f m\n%s", inst.Name, dist, statusText)
-                end
-            end
-        end
-
-        for inst, entry in pairs(GeneratorESP.Entries) do
-            if not activeSet[inst] or not inst.Parent then
-                if entry.Highlight then entry.Highlight:Destroy() end
-                if entry.Billboard then entry.Billboard:Destroy() end
-                if entry.DescConn then entry.DescConn:Disconnect() end
-                GeneratorESP.Entries[inst] = nil
-            end
-        end
-    end
-end
-
--- ============================================================================
--- 12. AUTO AIMBOT, RGB WEAPON LASER & AUTO PARRY ENGINE
--- ============================================================================
-do
-    Combat.FOVCircle = Utils.Create("Frame", {
-        Name = "BSS_AimFOV",
-        Size = UDim2.new(0, Combat.FOVRadius * 2, 0, Combat.FOVRadius * 2),
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
+function UIControls.CreateSlider(section, langKey, stateKey, minVal, maxVal, decimals, order, onChanged)
+    local holder = Utils.Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 48),
+        BackgroundColor3 = ActiveTheme.BgCard,
+        BorderSizePixel = 0,
+        LayoutOrder = order or 1,
+        Parent = section
+    })
+    Utils.Corner(holder, 8)
+
+    local lbl = Utils.Create("TextLabel", {
+        Size = UDim2.new(1, -80, 0, 22),
+        Position = UDim2.new(0, 12, 0, 4),
         BackgroundTransparency = 1,
-        Visible = false,
-        ZIndex = 5,
-    }, UI.ScreenGui)
-    Utils.AddCorner(Combat.FOVCircle, 999)
-    local fovStroke = Utils.AddStroke(Combat.FOVCircle, Theme.Accent, 1.3, 0.35)
-    Utils.RegisterAccent(fovStroke, "Color")
-
-    function Combat.GetEquippedRangedWeapon()
-        local char = Utils.GetCharacter(LocalPlayer)
-        if not char then return nil, false end
-        local tool = char:FindFirstChildOfClass("Tool")
-        if not tool then return nil, false end
-
-        for _, desc in ipairs(tool:GetDescendants()) do
-            local dName = string.lower(desc.Name)
-            if dName == "muzzle" or dName == "barrel" or dName == "firepoint" or dName == "gunscript" or dName == "ammo" or dName == "bullet" then
-                return tool, true
-            end
-        end
-
-        local nameLower = string.lower(tool.Name)
-        local gunKeywords = {
-            "gun", "pistol", "rifle", "sniper", "ak", "m4", "m16", "shotgun",
-            "smg", "bow", "crossbow", "blaster", "laser", "revolver", "glock", "deagle",
-            "uzi", "carbine", "launcher", "mp5", "scar", "awp", "raygun",
-            "tec", "mac", "cannon", "ray", "plasma", "magnum", "beretta"
-        }
-        for _, kw in ipairs(gunKeywords) do
-            if string.match(nameLower, "%f[%a]" .. kw .. "%f[%A]") then
-                return tool, true
-            end
-        end
-
-        return tool, false
-    end
-
-    function Combat.HideLaser()
-        if Combat.LaserPart then
-            Combat.LaserPart.Transparency = 1
-        end
-    end
-
-    function Combat.UpdateLaser(startPos, endPos)
-        if not Combat.LaserPart or not Combat.LaserPart.Parent then
-            Combat.LaserPart = Utils.Create("Part", {
-                Name = "BSS_RGB_AimLaser",
-                Anchored = true,
-                CanCollide = false,
-                CanTouch = false,
-                CanQuery = false,
-                CastShadow = false,
-                Material = Enum.Material.Neon,
-                Transparency = 0.15,
-                Size = Vector3.new(0.08, 0.08, 1),
-            }, workspace)
-        end
-
-        local dist = (endPos - startPos).Magnitude
-        if dist < 0.2 then
-            Combat.LaserPart.Transparency = 1
-            return
-        end
-
-        local hue = (os.clock() * 0.65) % 1
-        Combat.LaserPart.Color = Color3.fromHSV(hue, 1, 1)
-        Combat.LaserPart.Transparency = 0.12
-        Combat.LaserPart.Size = Vector3.new(0.08, 0.08, dist)
-        Combat.LaserPart.CFrame = CFrame.lookAt(startPos, endPos) * CFrame.new(0, 0, -dist / 2)
-    end
-
-    function Combat.FindBestTarget()
-        local cam = workspace.CurrentCamera
-        if not cam then return nil, nil end
-
-        local viewportCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-        local bestTarget = nil
-        local bestAimPart = nil
-        local bestScore = Combat.FOVRadius
-
-        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                local isAlly = (#Teams:GetTeams() > 0 and LocalPlayer.Team ~= nil and plr.Team == LocalPlayer.Team)
-                if not (Combat.TeamCheck and isAlly) then
-                    local char, hum, root = Utils.GetCharacter(plr)
-                    if char and hum and hum.Health > 0 and root then
-                        if not char:FindFirstChildOfClass("ForceField") then
-                            local partToAim = root
-                            if Combat.AimPart == "Head" then
-                                partToAim = char:FindFirstChild("Head") or root
-                            elseif Combat.AimPart == "Closest" then
-                                local head = char:FindFirstChild("Head")
-                                if head then
-                                    local hPos = cam:WorldToViewportPoint(head.Position)
-                                    local rPos = cam:WorldToViewportPoint(root.Position)
-                                    local dH = (Vector2.new(hPos.X, hPos.Y) - viewportCenter).Magnitude
-                                    local dR = (Vector2.new(rPos.X, rPos.Y) - viewportCenter).Magnitude
-                                    partToAim = (dH < dR) and head or root
-                                end
-                            end
-
-                            local worldDist = myRoot and (partToAim.Position - myRoot.Position).Magnitude or 0
-                            if worldDist <= Combat.MaxRange then
-                                local screenPos, onScreen = cam:WorldToViewportPoint(partToAim.Position)
-                                if onScreen and screenPos.Z > 0 then
-                                    local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
-                                    if screenDist <= bestScore then
-                                        bestScore = screenDist
-                                        bestTarget = plr
-                                        bestAimPart = partToAim
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        return bestTarget, bestAimPart
-    end
-
-    -- Auto Parry Engine (Deteksi pukulan/serangan lawan & teman di sekitar karakter)
-    function Combat.TriggerParryAction(attackerName)
-        local now = os.clock()
-        if (now - Combat.LastParryTime) < Combat.ParryCooldown then
-            return
-        end
-        Combat.LastParryTime = now
-
-        local myChar, myHum = Utils.GetCharacter(LocalPlayer)
-        if not myChar or not myHum or myHum.Health <= 0 then return end
-
-        -- 1. Equip & aktifkan Tool Parry/Block/Shield/Sword jika ada di Backpack atau Character
-        local activeTool = myChar:FindFirstChildOfClass("Tool")
-        if not activeTool then
-            local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
-            if bp then
-                for _, t in ipairs(bp:GetChildren()) do
-                    if t:IsA("Tool") then
-                        local tn = string.lower(t.Name)
-                        if string.find(tn, "parry") or string.find(tn, "block") or string.find(tn, "shield") or string.find(tn, "sword") or string.find(tn, "blade") or string.find(tn, "bat") then
-                            myHum:EquipTool(t)
-                            activeTool = t
-                            break
-                        end
-                    end
-                end
-            end
-        end
-
-        if activeTool then
-            pcall(function() activeTool:Activate() end)
-        end
-
-        -- 2. Kirim input tombol Parry standar ('F') via VirtualInputManager
-        if VirtualInputManager then
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-                task.delay(0.06, function()
-                    pcall(function()
-                        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-                    end)
-                end)
-            end)
-        end
-
-        Utils.Notify("Auto Parry!", "Menangkis serangan dari " .. tostring(attackerName), Theme.Success)
-    end
-
-    function Combat.StepAutoParry()
-        if not Combat.AutoParryEnabled then return end
-        local _, myHum, myRoot = Utils.GetCharacter(LocalPlayer)
-        if not myHum or not myRoot or myHum.Health <= 0 then return end
-
-        local attackKeywords = {
-            "slash", "punch", "attack", "strike", "jab", "kick",
-            "heavy", "bash", "slam", "uppercut", "combo", "lunge", "chop", "melee", "stab"
-        }
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                local isAlly = (#Teams:GetTeams() > 0 and LocalPlayer.Team ~= nil and plr.Team == LocalPlayer.Team)
-                if not (Combat.TeamCheck and isAlly) then
-                    local char, hum, root = Utils.GetCharacter(plr)
-                    if char and hum and hum.Health > 0 and root then
-                        local dist = (root.Position - myRoot.Position).Magnitude
-                        if dist <= Combat.ParryRange then
-                            local animator = hum:FindFirstChildOfClass("Animator")
-                            if animator then
-                                for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-                                    local animName = string.lower((track.Name or "") .. " " .. (track.Animation and track.Animation.Name or ""))
-                                    for _, kw in ipairs(attackKeywords) do
-                                        if string.find(animName, kw, 1, true) then
-                                            Combat.TriggerParryAction(plr.DisplayName)
-                                            return
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
--- ============================================================================
--- 13. INTERACTIVE REPLICATED CARRY ENGINE (Terlihat di Device Pemain Lain)
--- ============================================================================
-do
-    local carryOffsets = {
-        Depan = CFrame.new(0, 0.25, -1.75) * CFrame.Angles(0, math.rad(90), math.rad(15)),
-        Belakang = CFrame.new(0, 0.75, 1.35) * CFrame.Angles(math.rad(-10), 0, 0),
-        Pundak = CFrame.new(1.15, 1.45, -0.15) * CFrame.Angles(math.rad(85), 0, math.rad(90)),
-        Seret = CFrame.new(0, -2.15, 2.8) * CFrame.Angles(math.rad(82), math.rad(180), 0),
-        Kepala = CFrame.new(0, 3.1, 0),
-        Melayang = CFrame.new(2.2, 1.1, -0.5) * CFrame.Angles(0, math.rad(-25), 0),
-    }
-
-    -- Animasi pose carry resmi R15 / R6 agar tereplikasi ke layar pemain lain
-    local carryAnimIds = {
-        R15 = "rbxassetid://3333474484",
-        R6 = "rbxassetid://182435998",
-    }
-
-    function Carry.PlayReplicatedPose()
-        local _, hum = Utils.GetCharacter(LocalPlayer)
-        if not hum then return end
-        local animator = Utils.GetAnimator(hum)
-        if not animator then return end
-
-        if Carry.AnimTrack then
-            pcall(function() Carry.AnimTrack:Stop(0.1) end)
-            Carry.AnimTrack = nil
-        end
-
-        local anim = Instance.new("Animation")
-        anim.AnimationId = (hum.RigType == Enum.HumanoidRigType.R6) and carryAnimIds.R6 or carryAnimIds.R15
-        local ok, track = pcall(function()
-            return animator:LoadAnimation(anim)
-        end)
-        if ok and track then
-            track.Priority = Enum.AnimationPriority.Action
-            track.Looped = true
-            track:Play(0.15)
-            Carry.AnimTrack = track
-        end
-    end
-
-    function Carry.TryNativeMapCarry(targetPlr)
-        local tChar, _, tRoot = Utils.GetCharacter(targetPlr)
-        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-        if not tChar or not tRoot or not myRoot then return false end
-
-        -- Dekatkan posisi sejenak untuk memicu ProximityPrompt carry bawaan map jika ada
-        local carryWords = { "carry", "gendong", "angkat", "grab", "pick", "piggy", "hold" }
-        for _, desc in ipairs(tChar:GetDescendants()) do
-            if desc:IsA("ProximityPrompt") and desc.Enabled then
-                local txt = string.lower((desc.ActionText or "") .. " " .. (desc.ObjectText or "") .. " " .. desc.Name)
-                for _, kw in ipairs(carryWords) do
-                    if string.find(txt, kw, 1, true) then
-                        Utils.SafeTeleport(tRoot.CFrame * CFrame.new(0, 0, 2))
-                        task.spawn(function()
-                            task.wait(0.12)
-                            if typeof(fireproximityprompt) == "function" and desc and desc.Parent then
-                                pcall(fireproximityprompt, desc)
-                            end
-                        end)
-                        return true
-                    end
-                end
-            end
-        end
-        return false
-    end
-
-    function Carry.Start()
-        if not Carry.TargetPlayer then
-            Utils.Notify("Pilih Pemain", "Pilih teman/player terlebih dahulu sebelum menekan Carry!", Theme.Warning)
-            Carry.Enabled = false
-            return false
-        end
-
-        Carry.NativePromptTriggered = false
-        Carry.NativePromptTriggered = Carry.TryNativeMapCarry(Carry.TargetPlayer)
-        Carry.Enabled = true
-        Carry.PlayReplicatedPose()
-
-        local modeInfo = Carry.NativePromptTriggered and "Mode Server/Map" or "Mode Visual Lokal"
-        Utils.Notify(
-            "Carry Aktif",
-            "Meng-carry " .. Carry.TargetPlayer.DisplayName .. " (Gaya: " .. Carry.Style .. " | " .. modeInfo .. ")",
-            Theme.Success
-        )
-        return true
-    end
-
-    function Carry.Stop()
-        Carry.Enabled = false
-        Carry.NativePromptTriggered = false
-
-        if Carry.AnimTrack then
-            pcall(function() Carry.AnimTrack:Stop(0.15) end)
-            Carry.AnimTrack = nil
-        end
-
-        if Carry.TargetPlayer then
-            local _, tHum = Utils.GetCharacter(Carry.TargetPlayer)
-            if tHum then
-                tHum.PlatformStand = false
-                if tHum:GetState() == Enum.HumanoidStateType.Physics then
-                    tHum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                end
-            end
-        end
-    end
-
-    function Carry.Step()
-        if not Carry.Enabled or not Carry.TargetPlayer then return end
-        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-        local tChar, tHum, tRoot = Utils.GetCharacter(Carry.TargetPlayer)
-
-        if not myRoot or not tChar or not tRoot or not tHum or tHum.Health <= 0 then
-            return
-        end
-
-        -- Jika map memiliki sistem carry bawaan yang sudah aktif (Weld/Seat), biarkan map yang menanganinya
-        if Carry.NativePromptTriggered then
-            return
-        end
-
-        local offset = carryOffsets[Carry.Style] or carryOffsets.Depan
-        tHum.PlatformStand = true
-        tRoot.AssemblyLinearVelocity = Vector3.zero
-        tRoot.AssemblyAngularVelocity = Vector3.zero
-        tRoot.CFrame = myRoot.CFrame * offset
-    end
-end
-
--- ============================================================================
--- 14. INTERACTIVE REPLICATED R6 & R15 DANCE / EMOTE STUDIO (Terlihat Pemain Lain)
--- ============================================================================
-do
-    -- Menggunakan Roblox Animator AnimationTrack sehingga gerakan tereplikasi otomatis ke semua pemain lain!
-    Emotes.Catalog = {
-        { Id = "Dance1", Label = "Groove Dance 1", R15 = "rbxassetid://507771019", R6 = "rbxassetid://182435998" },
-        { Id = "Dance2", Label = "Party Dance 2", R15 = "rbxassetid://507776043", R6 = "rbxassetid://182436842" },
-        { Id = "Dance3", Label = "Hype Dance 3", R15 = "rbxassetid://507777268", R6 = "rbxassetid://182436935" },
-        { Id = "Stadium", Label = "Stadium Wave", R15 = "rbxassetid://3338010159", R6 = "rbxassetid://129423030" },
-        { Id = "Tilt", Label = "Head Tilt Vibe", R15 = "rbxassetid://3334538554", R6 = "rbxassetid://128777973" },
-        { Id = "Salute", Label = "Respect Salute", R15 = "rbxassetid://3333474484", R6 = "rbxassetid://128777973" },
-        { Id = "Shrug", Label = "Chill Shrug", R15 = "rbxassetid://3334392772", R6 = "rbxassetid://129423131" },
-        { Id = "Applause", Label = "Victory Claps", R15 = "rbxassetid://5915693819", R6 = "rbxassetid://129423030" },
-        { Id = "Cheer", Label = "Happy Cheer", R15 = "rbxassetid://507770677", R6 = "rbxassetid://129423030" },
-        { Id = "Laugh", Label = "Big Laugh", R15 = "rbxassetid://507770818", R6 = "rbxassetid://129423131" },
-        { Id = "Point", Label = "Look There", R15 = "rbxassetid://507770453", R6 = "rbxassetid://128853357" },
-        { Id = "Wave", Label = "Friendly Wave", R15 = "rbxassetid://507770239", R6 = "rbxassetid://128777973" },
-    }
-
-    function Emotes.Stop()
-        Emotes.Playing = false
-        Emotes.CurrentDance = nil
-        if Emotes.ActiveTrack then
-            pcall(function() Emotes.ActiveTrack:Stop(0.15) end)
-            Emotes.ActiveTrack = nil
-        end
-    end
-
-    function Emotes.PlayAsset(labelName, assetId)
-        local char, hum = Utils.GetCharacter(LocalPlayer)
-        if not char or not hum then
-            Utils.Notify("Emote", "Karakter belum siap.", Theme.Warning)
-            return
-        end
-
-        local animator = Utils.GetAnimator(hum)
-        if not animator then
-            Utils.Notify("Emote", "Animator karakter tidak ditemukan.", Theme.Warning)
-            return
-        end
-
-        Emotes.Stop()
-
-        local cleanId = tostring(assetId)
-        if not string.find(cleanId, "rbxassetid://", 1, true) then
-            local digits = string.match(cleanId, "%d+")
-            if not digits then
-                Utils.Notify("ID Tidak Valid", "Masukkan angka Animation ID Roblox yang valid.", Theme.Danger)
-                return
-            end
-            cleanId = "rbxassetid://" .. digits
-        end
-
-        local anim = Instance.new("Animation")
-        anim.AnimationId = cleanId
-
-        local ok, track = pcall(function()
-            return animator:LoadAnimation(anim)
-        end)
-
-        if ok and track then
-            track.Priority = Enum.AnimationPriority.Action
-            track.Looped = true
-            track:Play(0.15)
-            track:AdjustSpeed(Emotes.Speed)
-
-            Emotes.ActiveTrack = track
-            Emotes.Playing = true
-            Emotes.CurrentDance = labelName
-            Emotes.CurrentId = cleanId
-            Utils.Notify("Dance Terkirim ke Server", "Memainkan: " .. labelName .. " (Terlihat pemain lain)", Theme.Success)
-        else
-            Utils.Notify("Gagal Memuat Dance", "ID animasi tidak didukung di map ini.", Theme.Warning)
-        end
-    end
-
-    function Emotes.PlayPreset(entry)
-        local _, hum = Utils.GetCharacter(LocalPlayer)
-        local isR6 = hum and (hum.RigType == Enum.HumanoidRigType.R6)
-        local chosenId = isR6 and entry.R6 or entry.R15
-        Emotes.PlayAsset(entry.Label, chosenId)
-    end
-end
-
--- ============================================================================
--- 15. PROTECTION & SURVIVAL ENGINE (Anti-AFK, Melee Immunity, Hunger & Thirst)
--- ============================================================================
-do
-    -- Anti-AFK (Mencegah disconnect 20 menit diam)
-    Utils.Track(LocalPlayer.Idled:Connect(function()
-        if Protection.AntiAFKEnabled then
-            Protection.IdleEventsHandled = Protection.IdleEventsHandled + 1
-            pcall(function()
-                if VirtualUser then
-                    VirtualUser:CaptureController()
-                    VirtualUser:ClickButton2(Vector2.new())
-                end
-            end)
-        end
-    end))
-
-    function Protection.RestoreEnemyHitboxes()
-        for part, origTouch in pairs(Combat.TouchedPartsCache) do
-            if part and part.Parent and part:IsA("BasePart") then
-                part.CanTouch = origTouch
-            end
-        end
-        table.clear(Combat.TouchedPartsCache)
-        table.clear(Combat.EnemyToolParts)
-    end
-
-    local function getCachedToolParts(tool)
-        local cached = Combat.EnemyToolParts[tool]
-        if not cached then
-            cached = {}
-            for _, desc in ipairs(tool:GetDescendants()) do
-                if desc:IsA("BasePart") then
-                    table.insert(cached, desc)
-                end
-            end
-            Combat.EnemyToolParts[tool] = cached
-            Utils.Track(tool.DescendantAdded:Connect(function(desc)
-                if desc:IsA("BasePart") and Combat.EnemyToolParts[tool] then
-                    table.insert(Combat.EnemyToolParts[tool], desc)
-                end
-            end))
-            Utils.Track(tool.AncestryChanged:Connect(function(_, parent)
-                if not parent then
-                    Combat.EnemyToolParts[tool] = nil
-                end
-            end))
-        end
-        return cached
-    end
-
-    function Protection.StepMeleeImmunity()
-        if not Combat.MeleeImmunity then return end
-        local char, hum, root = Utils.GetCharacter(LocalPlayer)
-        if not char or not hum or not root then return end
-
-        local badStates = {
-            [Enum.HumanoidStateType.Ragdoll] = true,
-            [Enum.HumanoidStateType.FallingDown] = true,
-            [Enum.HumanoidStateType.Physics] = true,
-        }
-        if badStates[hum:GetState()] then
-            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-        end
-        if not State.FlyEnabled and not Carry.Enabled and hum.PlatformStand then
-            hum.PlatformStand = false
-        end
-
-        if not State.FlyEnabled then
-            local vel = root.AssemblyLinearVelocity
-            local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
-            if horizSpeed > (State.WalkSpeed + 28) or vel.Y > 65 then
-                root.AssemblyLinearVelocity = Vector3.new(0, math.min(vel.Y, 65), 0)
-            end
-            root.AssemblyAngularVelocity = Vector3.zero
-        end
-
-        if hum.Health > 0 and hum.Health < hum.MaxHealth then
-            hum.Health = hum.MaxHealth
-        end
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
-                local enemyTool = plr.Character:FindFirstChildOfClass("Tool")
-                if enemyTool then
-                    local parts = getCachedToolParts(enemyTool)
-                    for _, desc in ipairs(parts) do
-                        if desc and desc.Parent then
-                            if Combat.TouchedPartsCache[desc] == nil then
-                                Combat.TouchedPartsCache[desc] = desc.CanTouch
-                            end
-                            if desc.CanTouch then
-                                desc.CanTouch = false
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- Tahan Lapar & Tahan Haus (Terkontrol & Cache-Based tanpa memindai PlayerGui)
-    local survivalKeywords = {
-        "hunger", "lapar", "thirst", "haus", "food", "makan",
-        "water", "minum", "hydration", "starve", "energy", "calories"
-    }
-
-    local function matchesSurvivalKeyword(str)
-        local lower = string.lower(str)
-        for _, kw in ipairs(survivalKeywords) do
-            if string.find(lower, kw, 1, true) then
-                return true
-            end
-        end
-        return false
-    end
-
-    function Protection.RegisterSurvivalValue(inst)
-        if (inst:IsA("NumberValue") or inst:IsA("IntValue")) and matchesSurvivalKeyword(inst.Name) then
-            Protection.HungerThirstValues[inst] = true
-        end
-    end
-
-    function Protection.BindSurvivalContainer(container)
-        if not container then return end
-        for _, child in ipairs(container:GetChildren()) do
-            if not child:IsA("PlayerGui") and not child:IsA("PlayerScripts") and not child:IsA("Backpack") then
-                Protection.RegisterSurvivalValue(child)
-                for _, desc in ipairs(child:GetDescendants()) do
-                    Protection.RegisterSurvivalValue(desc)
-                end
-            end
-        end
-        Utils.Track(container.DescendantAdded:Connect(function(desc)
-            if not desc:FindFirstAncestorOfClass("PlayerGui") and not desc:FindFirstAncestorOfClass("PlayerScripts") then
-                Protection.RegisterSurvivalValue(desc)
-            end
-        end))
-    end
-
-    Protection.BindSurvivalContainer(LocalPlayer)
-    if LocalPlayer.Character then
-        Protection.BindSurvivalContainer(LocalPlayer.Character)
-    end
-    Utils.Track(LocalPlayer.CharacterAdded:Connect(function(char)
-        Protection.BindSurvivalContainer(char)
-    end))
-
-    function Protection.StepHungerThirstGuard()
-        if not Combat.HungerThirstGuard then return end
-
-        local function restoreAttributes(container)
-            if not container then return end
-            pcall(function()
-                for attrName, attrVal in pairs(container:GetAttributes()) do
-                    if type(attrVal) == "number" and matchesSurvivalKeyword(attrName) then
-                        local maxAttr = container:GetAttribute("Max" .. attrName) or 100
-                        if attrVal < maxAttr then
-                            container:SetAttribute(attrName, maxAttr)
-                        end
-                    end
-                end
-            end)
-        end
-
-        restoreAttributes(LocalPlayer)
-        restoreAttributes(LocalPlayer.Character)
-
-        for valObj, _ in pairs(Protection.HungerThirstValues) do
-            if valObj and valObj.Parent then
-                local maxObj = valObj.Parent:FindFirstChild("Max" .. valObj.Name) or valObj.Parent:FindFirstChild("MaxValue")
-                local targetMax = 100
-                if maxObj and (maxObj:IsA("NumberValue") or maxObj:IsA("IntValue")) and maxObj.Value > 0 then
-                    targetMax = maxObj.Value
-                elseif valObj.Value > 100 then
-                    targetMax = valObj.Value
-                end
-                if valObj.Value < targetMax then
-                    valObj.Value = targetMax
-                end
-            else
-                Protection.HungerThirstValues[valObj] = nil
-            end
-        end
-    end
-end
-
--- ============================================================================
--- TAB 1: DASHBOARD & TELEMETRY
--- ============================================================================
-do
-    local page = Components.CreateTab("Dashboard", "◈", 1)
-    Components.AddSectionHeader(page, "Telemetri Klien Langsung", 1)
-
-    local grid = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 124),
-        BackgroundTransparency = 1,
-        LayoutOrder = 2,
-        ZIndex = 14,
-    }, page)
-
-    Utils.Create("UIGridLayout", {
-        CellSize = UDim2.new(0.485, 0, 0, 58),
-        CellPadding = UDim2.new(0.03, 0, 0, 8),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, grid)
-
-    local function createStatCard(labelTitle, initialValue, order)
-        local box = Utils.Create("Frame", {
-            BackgroundColor3 = Theme.BgCard,
-            BackgroundTransparency = 0.25,
-            BorderSizePixel = 0,
-            LayoutOrder = order,
-            ZIndex = 14,
-        }, grid)
-        Utils.AddCorner(box, 9)
-        Utils.AddStroke(box, Theme.BorderSubtle, 1, 0.3)
-
-        local l1 = Utils.Create("TextLabel", {
-            Size = UDim2.new(1, -16, 0, 16),
-            Position = UDim2.new(0, 10, 0, 8),
-            BackgroundTransparency = 1,
-            Font = Theme.FontFamily,
-            Text = labelTitle,
-            TextColor3 = Theme.TextSecondary,
-            TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 15,
-        }, box)
-        Utils.RegisterText(l1, false, Theme.TextSecondary)
-
-        local valLbl = Utils.Create("TextLabel", {
-            Size = UDim2.new(1, -16, 0, 22),
-            Position = UDim2.new(0, 10, 0, 26),
-            BackgroundTransparency = 1,
-            Font = Theme.FontBold,
-            Text = initialValue,
-            TextColor3 = Theme.TextPrimary,
-            TextSize = 15,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            ZIndex = 15,
-        }, box)
-        Utils.RegisterText(valLbl, true, Theme.TextPrimary)
-
-        return valLbl
-    end
-
-    UI.TelemetryLabels.FPS = createStatCard("Frame Rate (FPS)", "60 FPS", 1)
-    UI.TelemetryLabels.Ping = createStatCard("Network Latency", "-- ms", 2)
-    UI.TelemetryLabels.Memory = createStatCard("Client Memory", "-- MB", 3)
-    UI.TelemetryLabels.Players = createStatCard("Active Players", tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers), 4)
-
-    Components.AddSectionHeader(page, "Utilitas Server & Sesi", 3)
-
-    Components.AddButton(page, "Salin Place & Job ID", "PlaceId: " .. tostring(game.PlaceId), "Copy ID", 4, function()
-        local infoStr = string.format("PlaceId: %s | JobId: %s", tostring(game.PlaceId), tostring(game.JobId))
-        if Utils.CopyText(infoStr) then
-            Utils.Notify("Tersalin", infoStr, Theme.Success)
-        else
-            Utils.Notify("Info Server", infoStr, Theme.Accent)
-        end
-    end)
-
-    Components.AddButton(page, "Respawn Karakter", "Segarkan kembali status karakter lokal", "Respawn", 5, function()
-        local _, hum = Utils.GetCharacter()
-        if hum then
-            hum.Health = 0
-            Utils.Notify("Karakter", "Melakukan respawn karakter...", Theme.Warning)
-        end
-    end)
-
-    Components.AddButton(page, "Rejoin Server Saat Ini", "Hubungkan ulang ke instance PlaceId yang sama", "Rejoin", 6, function()
-        Utils.Notify("TeleportService", "Mencoba masuk kembali ke server...", Theme.Accent)
-        pcall(function()
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-        end)
-    end)
-end
-
--- ============================================================================
--- TAB 2: ESP & VISUAL RADAR (Pemain, Barang-Barang Tanpa Latar, & Generator)
--- ============================================================================
-do
-    local page = Components.CreateTab("ESP Radar", "👁", 2)
-    Components.AddSectionHeader(page, "ESP Pemain & Transparansi Avatar", 1)
-
-    Components.AddToggle(page, "Universal Player ESP (Tembus Tembok)", "Tampilkan ESP jarak jauh menembus tembok di semua map", false, 2, function(on)
-        ESP.Enabled = on
-        if not on then
-            ESP.ClearAll()
-        end
-        Utils.Notify("Universal ESP", on and "ESP pemain aktif di seluruh map." or "ESP pemain dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Highlight Avatar Transparan", "Sorot tubuh avatar pemain agar terlihat dari jarak sejauh mana pun", true, 3, function(on)
-        ESP.ShowAvatar = on
-    end)
-
-    Components.AddToggle(page, "Indikator Jarak Pemain (Meter)", "Tampilkan jarak real-time ke setiap pemain", true, 4, function(on)
-        ESP.ShowDistance = on
-    end)
-
-    Components.AddToggle(page, "Indikator Darah / HP Adaptif", "Otomatis menampilkan HP jika map menggunakan sistem darah", true, 5, function(on)
-        ESP.ShowHealth = on
-    end)
-
-    Components.AddChipSelector(page, "Mode Target ESP (Teman / Musuh / Random)", {
-        { Label = "Auto Map", Value = "Auto" },
-        { Label = "Musuh Saja", Value = "Enemy" },
-        { Label = "Teman Saja", Value = "Ally" },
-        { Label = "Random Semua", Value = "Random" },
-    }, "Auto", 6, function(val)
-        ESP.Mode = val
-        Utils.Notify("Mode ESP", "Mode target diatur ke: " .. val, Theme.Accent)
-    end)
-
-    Components.AddSlider(page, "Jarak Maksimal ESP Pemain (Studs)", 200, 10000, 2500, 0, 7, function(val)
-        ESP.MaxDistance = val
-    end)
-
-    Components.AddSectionHeader(page, "Kustomisasi Warna & Font ESP Pemain", 8)
-
-    Components.AddChipSelector(page, "Pilih Gaya Font ESP Pemain", {
-        { Label = "Gotham Bold", Value = Enum.Font.GothamBold, Font = Enum.Font.GothamBold },
-        { Label = "Fredoka One", Value = Enum.Font.FredokaOne, Font = Enum.Font.FredokaOne },
-        { Label = "Creepster", Value = Enum.Font.Creepster, Font = Enum.Font.Creepster },
-        { Label = "Roboto Mono", Value = Enum.Font.RobotoMono, Font = Enum.Font.RobotoMono },
-        { Label = "Bangers", Value = Enum.Font.Bangers, Font = Enum.Font.Bangers },
-        { Label = "Merriweather", Value = Enum.Font.Merriweather, Font = Enum.Font.Merriweather },
-    }, Enum.Font.GothamBold, 9, function(val)
-        ESP.Font = val
-    end)
-
-    Components.AddChipSelector(page, "Warna Utama ESP / Highlight", {
-        { Label = "Labu Emas", Value = Color3.fromRGB(255, 118, 26), Color = Color3.fromRGB(255, 118, 26) },
-        { Label = "Merah Darah", Value = Color3.fromRGB(235, 69, 95), Color = Color3.fromRGB(235, 69, 95) },
-        { Label = "Hijau Neon", Value = Color3.fromRGB(46, 213, 115), Color = Color3.fromRGB(46, 213, 115) },
-        { Label = "Cyan Spektral", Value = Color3.fromRGB(24, 220, 255), Color = Color3.fromRGB(24, 220, 255) },
-        { Label = "Ungu Mistis", Value = Color3.fromRGB(165, 94, 234), Color = Color3.fromRGB(165, 94, 234) },
-        { Label = "Putih Terang", Value = Color3.fromRGB(255, 255, 255), Color = Color3.fromRGB(255, 255, 255) },
-    }, Color3.fromRGB(255, 118, 26), 10, function(val)
-        ESP.HighlightColor = val
-    end)
-
-    Components.AddChipSelector(page, "Warna Teks Jarak", {
-        { Label = "Kuning Emas", Value = Color3.fromRGB(255, 210, 120), Color = Color3.fromRGB(255, 210, 120) },
-        { Label = "Cyan Es", Value = Color3.fromRGB(112, 235, 255), Color = Color3.fromRGB(112, 235, 255) },
-        { Label = "Putih Bersih", Value = Color3.fromRGB(250, 250, 255), Color = Color3.fromRGB(250, 250, 255) },
-        { Label = "Oranye Labu", Value = Color3.fromRGB(255, 145, 65), Color = Color3.fromRGB(255, 145, 65) },
-        { Label = "Pink Neon", Value = Color3.fromRGB(255, 118, 195), Color = Color3.fromRGB(255, 118, 195) },
-        { Label = "Hijau Mint", Value = Color3.fromRGB(130, 255, 185), Color = Color3.fromRGB(130, 255, 185) },
-    }, Color3.fromRGB(255, 210, 120), 11, function(val)
-        ESP.DistanceColor = val
-    end)
-
-    Components.AddChipSelector(page, "Warna Teks Darah (HP)", {
-        { Label = "Hijau HP", Value = Color3.fromRGB(85, 239, 148), Color = Color3.fromRGB(85, 239, 148) },
-        { Label = "Merah Crimson", Value = Color3.fromRGB(255, 88, 108), Color = Color3.fromRGB(255, 88, 108) },
-        { Label = "Kuning Amber", Value = Color3.fromRGB(255, 214, 70), Color = Color3.fromRGB(255, 214, 70) },
-        { Label = "Putih Salju", Value = Color3.fromRGB(245, 248, 255), Color = Color3.fromRGB(245, 248, 255) },
-        { Label = "Biru Elektrik", Value = Color3.fromRGB(95, 185, 255), Color = Color3.fromRGB(95, 185, 255) },
-        { Label = "Ungu Violet", Value = Color3.fromRGB(195, 135, 255), Color = Color3.fromRGB(195, 135, 255) },
-    }, Color3.fromRGB(85, 239, 148), 12, function(val)
-        ESP.HealthColor = val
-    end)
-
-    Components.AddChipSelector(page, "Warna Latar Belakang Font Pemain", {
-        { Label = "Hitam Tipis", Value = Color3.fromRGB(16, 12, 24), Color = Color3.fromRGB(16, 12, 24) },
-        { Label = "Ungu Malam", Value = Color3.fromRGB(36, 20, 56), Color = Color3.fromRGB(36, 20, 56) },
-        { Label = "Coklat Labu", Value = Color3.fromRGB(48, 24, 12), Color = Color3.fromRGB(48, 24, 12) },
-        { Label = "Merah Gelap", Value = Color3.fromRGB(48, 14, 22), Color = Color3.fromRGB(48, 14, 22) },
-        { Label = "Putih Kabut", Value = Color3.fromRGB(235, 230, 242), Color = Color3.fromRGB(235, 230, 242) },
-        { Label = "Bening Halus", Value = Color3.fromRGB(10, 10, 14), Color = Color3.fromRGB(10, 10, 14) },
-    }, Color3.fromRGB(16, 12, 24), 13, function(val)
-        ESP.FontBgColor = val
-        ESP.FontBgTransparency = (val == Color3.fromRGB(10, 10, 14)) and 0.78 or 0.56
-    end)
-
-    Components.AddChipSelector(page, "Warna Font Nama ESP (Auto / Custom)", {
-        { Label = "Auto Kontras", Value = "Auto", Color = Color3.fromRGB(255, 195, 110) },
-        { Label = "Putih Tulang", Value = Color3.fromRGB(255, 248, 240), Color = Color3.fromRGB(255, 248, 240) },
-        { Label = "Emas Labu", Value = Color3.fromRGB(255, 155, 55), Color = Color3.fromRGB(255, 155, 55) },
-        { Label = "Merah Terang", Value = Color3.fromRGB(255, 95, 115), Color = Color3.fromRGB(255, 95, 115) },
-        { Label = "Hijau Spektral", Value = Color3.fromRGB(95, 245, 155), Color = Color3.fromRGB(95, 245, 155) },
-        { Label = "Hitam Pekat", Value = Color3.fromRGB(20, 16, 28), Color = Color3.fromRGB(20, 16, 28) },
-    }, "Auto", 14, function(val)
-        if val == "Auto" then
-            ESP.FontAutoContrast = true
-        else
-            ESP.FontAutoContrast = false
-            ESP.FontColor = val
-        end
-    end)
-
-    -- FITUR BARU: ESP BARANG-BARANG (TANPA LATAR BELAKANG, JARAK TAK TERBATAS)
-    Components.AddSectionHeader(page, "ESP Barang-Barang (Jarak Tak Terbatas & Tanpa Latar)", 15)
-
-    Components.AddToggle(page, "Universal Item & Loot ESP (Jarak Tak Terbatas)", "Deteksi struktur barang/loot/tool sejauh mana pun (ESP, Nama, Jarak tanpa latar)", false, 16, function(on)
-        ItemESP.Enabled = on
-        if not on then
-            ItemESP.ClearAll()
-        else
-            ItemESP.ScanAndRender()
-        end
-        Utils.Notify("ESP Barang", on and "ESP Barang aktif (tanpa batas jarak)." or "ESP Barang dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddChipSelector(page, "Gaya Font ESP Barang-Barang", {
-        { Label = "Gotham Bold", Value = Enum.Font.GothamBold, Font = Enum.Font.GothamBold },
-        { Label = "Fredoka One", Value = Enum.Font.FredokaOne, Font = Enum.Font.FredokaOne },
-        { Label = "Creepster", Value = Enum.Font.Creepster, Font = Enum.Font.Creepster },
-        { Label = "Roboto Mono", Value = Enum.Font.RobotoMono, Font = Enum.Font.RobotoMono },
-        { Label = "Bangers", Value = Enum.Font.Bangers, Font = Enum.Font.Bangers },
-        { Label = "Oswald", Value = Enum.Font.Oswald, Font = Enum.Font.Oswald },
-    }, Enum.Font.GothamBold, 17, function(val)
-        ItemESP.Font = val
-    end)
-
-    Components.AddChipSelector(page, "Warna Font ESP Barang-Barang", {
-        { Label = "Cyan Terang", Value = Color3.fromRGB(102, 242, 255), Color = Color3.fromRGB(102, 242, 255) },
-        { Label = "Kuning Emas", Value = Color3.fromRGB(255, 218, 88), Color = Color3.fromRGB(255, 218, 88) },
-        { Label = "Hijau Neon", Value = Color3.fromRGB(85, 255, 145), Color = Color3.fromRGB(85, 255, 145) },
-        { Label = "Oranye Labu", Value = Color3.fromRGB(255, 145, 55), Color = Color3.fromRGB(255, 145, 55) },
-        { Label = "Pink Neon", Value = Color3.fromRGB(255, 125, 210), Color = Color3.fromRGB(255, 125, 210) },
-        { Label = "Putih Bersih", Value = Color3.fromRGB(255, 255, 255), Color = Color3.fromRGB(255, 255, 255) },
-    }, Color3.fromRGB(102, 242, 255), 18, function(val)
-        ItemESP.Color = val
-    end)
-
-    -- FITUR BARU: ESP GENERATOR (NAMA, JARAK, STATUS PROSES PEMAIN LAIN)
-    Components.AddSectionHeader(page, "ESP Generator (Status Proses Real-Time)", 19)
-
-    Components.AddToggle(page, "Universal Generator ESP (Status Real-Time)", "Tampilkan ESP, Nama, Jarak & status generator (belum / sedang diproses pemain / selesai)", false, 20, function(on)
-        GeneratorESP.Enabled = on
-        if not on then
-            GeneratorESP.ClearAll()
-        else
-            GeneratorESP.ScanAndRender()
-        end
-        Utils.Notify("ESP Generator", on and "ESP Generator aktif." or "ESP Generator dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddChipSelector(page, "Gaya Font ESP Generator", {
-        { Label = "Gotham Bold", Value = Enum.Font.GothamBold, Font = Enum.Font.GothamBold },
-        { Label = "Fredoka One", Value = Enum.Font.FredokaOne, Font = Enum.Font.FredokaOne },
-        { Label = "Creepster", Value = Enum.Font.Creepster, Font = Enum.Font.Creepster },
-        { Label = "Roboto Mono", Value = Enum.Font.RobotoMono, Font = Enum.Font.RobotoMono },
-        { Label = "Bangers", Value = Enum.Font.Bangers, Font = Enum.Font.Bangers },
-        { Label = "Oswald", Value = Enum.Font.Oswald, Font = Enum.Font.Oswald },
-    }, Enum.Font.GothamBold, 21, function(val)
-        GeneratorESP.Font = val
-    end)
-
-    Components.AddChipSelector(page, "Warna ESP Generator", {
-        { Label = "Emas Listrik", Value = Color3.fromRGB(255, 196, 54), Color = Color3.fromRGB(255, 196, 54) },
-        { Label = "Hijau Mesin", Value = Color3.fromRGB(72, 245, 140), Color = Color3.fromRGB(72, 245, 140) },
-        { Label = "Biru Plasma", Value = Color3.fromRGB(75, 185, 255), Color = Color3.fromRGB(75, 185, 255) },
-        { Label = "Merah Siaga", Value = Color3.fromRGB(255, 85, 105), Color = Color3.fromRGB(255, 85, 105) },
-        { Label = "Ungu Spektral", Value = Color3.fromRGB(185, 115, 255), Color = Color3.fromRGB(185, 115, 255) },
-        { Label = "Putih Terang", Value = Color3.fromRGB(255, 255, 255), Color = Color3.fromRGB(255, 255, 255) },
-    }, Color3.fromRGB(255, 196, 54), 22, function(val)
-        GeneratorESP.Color = val
-    end)
-end
-
--- ============================================================================
--- TAB 3: AIMBOT, AUTO PARRY & PERTAHANAN (Kebal Pukulan + Tahan Lapar & Haus)
--- ============================================================================
-do
-    local page = Components.CreateTab("Combat", "🎯", 3)
-    Components.AddSectionHeader(page, "Auto Aimbot Presisi Tinggi", 1)
-
-    Components.AddToggle(page, "Precision Auto Aimbot", "Bidik sasaran akurat otomatis (pukulan & senjata)", false, 2, function(on)
-        Combat.AimbotEnabled = on
-        if not on then
-            Combat.CurrentTarget = nil
-            Combat.HideLaser()
-        end
-        Utils.Notify("Auto Aimbot", on and "Aimbot presisi aktif." or "Aimbot dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Conditional RGB Weapon Laser", "Tampilkan laser RGB hanya saat memegang pistol/senjata (tanpa laser saat memukul)", true, 3, function(on)
-        Combat.RGBLaserEnabled = on
-        if not on then
-            Combat.HideLaser()
-        end
-    end)
-
-    Components.AddChipSelector(page, "Mode Pemicu Aimbot", {
-        { Label = "Auto (Tool/Klik)", Value = "Auto" },
-        { Label = "Selalu Kunci", Value = "Always" },
-        { Label = "Tahan Klik Kanan", Value = "HoldRMB" },
-    }, "Auto", 4, function(val)
-        Combat.AimbotMode = val
-    end)
-
-    Components.AddChipSelector(page, "Bagian Tubuh Sasaran", {
-        { Label = "Kepala (Head)", Value = "Head" },
-        { Label = "Badan (Torso)", Value = "HumanoidRootPart" },
-        { Label = "Terdekat FOV", Value = "Closest" },
-    }, "Head", 5, function(val)
-        Combat.AimPart = val
-    end)
-
-    Components.AddToggle(page, "Filter Tim (Abaikan Rekan Satu Tim)", "Jangan bidik teman satu tim pada map berbasis tim", true, 6, function(on)
-        Combat.TeamCheck = on
-    end)
-
-    Components.AddToggle(page, "Visualisasi Lingkaran FOV Aimbot", "Visualisasi area jangkauan deteksi aimbot di layar", false, 7, function(on)
-        Combat.ShowFOVCircle = on
-        if Combat.FOVCircle then
-            Combat.FOVCircle.Visible = on
-        end
-    end)
-
-    Components.AddSlider(page, "Radius FOV Bidikan", 60, 600, 220, 0, 8, function(val)
-        Combat.FOVRadius = val
-        if Combat.FOVCircle then
-            Combat.FOVCircle.Size = UDim2.new(0, val * 2, 0, val * 2)
-        end
-    end)
-
-    Components.AddSlider(page, "Tingkat Akurasi / Kunci (1 = Instan)", 0.1, 1.0, 0.35, 2, 9, function(val)
-        Combat.Smoothness = val
-    end)
-
-    Components.AddSectionHeader(page, "Auto Parry & Pertahanan Karakter", 10)
-
-    Components.AddToggle(page, "Auto Parry & Counter-Block", "Otomatis menangkis saat lawan atau teman melancarkan pukulan di dekat Anda", false, 11, function(on)
-        Combat.AutoParryEnabled = on
-        Utils.Notify("Auto Parry", on and "Auto Parry aktif & memantau serangan sekitar!" or "Auto Parry dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddSlider(page, "Jarak Deteksi Auto Parry (Studs)", 6, 35, 16, 0, 12, function(val)
-        Combat.ParryRange = val
-    end)
-
-    Components.AddToggle(page, "Melee Immunity & Anti-Knockback", "Anti-knockback, anti-ragdoll, dan tahan hitbox pukulan melee lawan", false, 13, function(on)
-        Combat.MeleeImmunity = on
-        if not on then
-            Protection.RestoreEnemyHitboxes()
-        end
-        Utils.Notify("Kebal Pukulan", on and "Mode kebal pukulan & anti-mental aktif!" or "Mode kebal dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Survival Guard (Tahan Lapar & Haus)", "Menjaga indikator lapar (Hunger) dan haus (Thirst) tetap penuh secara interaktif", false, 14, function(on)
-        Combat.HungerThirstGuard = on
-        Utils.Notify("Survival Guard", on and "Tahan lapar & tahan haus aktif!" or "Tahan lapar & haus dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-end
-
--- ============================================================================
--- TAB 4: CARRY SYSTEM (Interaktif Terlihat di Pemain Lain + Tombol Carry/Lepas)
--- ============================================================================
-do
-    local page = Components.CreateTab("Carry", "🫂", 4)
-    Components.AddSectionHeader(page, "Kontrol Carry Interaktif (Replikasi Server)", 1)
-
-    local carryStatusLabel = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 22),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        Font = Theme.FontBold,
-        Text = "  Target Terpilih: Belum ada pemain dipilih",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 11,
+        Text = GeoLangAPI:T(langKey),
+        TextColor3 = ActiveTheme.TextPrimary,
+        TextSize = 12,
+        Font = Enum.Font.GothamMedium,
         TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 2,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(carryStatusLabel, 7)
-    Utils.RegisterText(carryStatusLabel, true, Theme.TextSecondary)
+        Parent = holder
+    })
+    GeoLangAPI:BindText(lbl, langKey)
 
-    -- Baris 2 Tombol Utama: Tombol "Carry" & Tombol "Lepas Carry"
-    local actionRow = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 42),
+    local fmt = decimals and ("%." .. tostring(decimals) .. "f") or "%d"
+    local valLbl = Utils.Create("TextLabel", {
+        Size = UDim2.new(0, 68, 0, 22),
+        Position = UDim2.new(1, -78, 0, 4),
         BackgroundTransparency = 1,
-        LayoutOrder = 3,
-        ZIndex = 14,
-    }, page)
-
-    local carryBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0.485, 0, 1, 0),
-        Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = Theme.Success,
-        Font = Theme.FontBold,
-        Text = "🫂 Carry",
-        TextColor3 = Color3.new(1, 1, 1),
+        Text = string.format(fmt, State[stateKey]),
+        TextColor3 = ActiveTheme.Accent,
         TextSize = 12,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = holder
+    })
+
+    local track = Utils.Create("TextButton", {
+        Size = UDim2.new(1, -24, 0, 8),
+        Position = UDim2.new(0, 12, 0, 31),
+        BackgroundColor3 = ActiveTheme.BgPrimary,
+        Text = "",
         AutoButtonColor = false,
-        ZIndex = 15,
-    }, actionRow)
-    Utils.AddCorner(carryBtn, 8)
+        Parent = holder
+    })
+    Utils.Corner(track, 4)
 
-    local releaseCarryBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0.485, 0, 1, 0),
-        Position = UDim2.new(0.515, 0, 0, 0),
-        BackgroundColor3 = Theme.Danger,
-        Font = Theme.FontBold,
-        Text = "✋ Lepas Carry",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 12,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, actionRow)
-    Utils.AddCorner(releaseCarryBtn, 8)
+    local initAlpha = math.clamp((State[stateKey] - minVal) / (maxVal - minVal), 0, 1)
+    local fill = Utils.Create("Frame", {
+        Size = UDim2.new(initAlpha, 0, 1, 0),
+        BackgroundColor3 = ActiveTheme.Accent,
+        BorderSizePixel = 0,
+        Parent = track
+    })
+    Utils.Corner(fill, 4)
 
-    carryBtn.MouseButton1Click:Connect(function()
-        SafeEngine.Run("CarryStart", function()
-            if Carry.Start() and Carry.TargetPlayer then
-                local modeTag = Carry.NativePromptTriggered and "Server" or "Lokal"
-                carryStatusLabel.Text = "  Status: Meng-carry " .. Carry.TargetPlayer.DisplayName .. " (" .. Carry.Style .. " | " .. modeTag .. ")"
-            end
-        end)
-    end)
-
-    releaseCarryBtn.MouseButton1Click:Connect(function()
-        SafeEngine.Run("CarryStop", function()
-            Carry.Stop()
-            carryStatusLabel.Text = Carry.TargetPlayer
-                and ("  Target Terpilih: " .. Carry.TargetPlayer.DisplayName .. " (Dilepas)")
-                or "  Target Terpilih: Belum ada pemain dipilih"
-            Utils.Notify("Lepas Carry", "Target telah dilepaskan.", Theme.TextSecondary)
-        end)
-    end)
-
-    Components.AddChipSelector(page, "Pilih Gaya Carry Lengkap", {
-        { Label = "Carry Depan", Value = "Depan" },
-        { Label = "Carry Belakang", Value = "Belakang" },
-        { Label = "Carry di Pundak", Value = "Pundak" },
-        { Label = "Carry di Seret", Value = "Seret" },
-        { Label = "Carry di Kepala", Value = "Kepala" },
-        { Label = "Carry Melayang", Value = "Melayang" },
-    }, "Depan", 4, function(val)
-        Carry.Style = val
-        if Carry.Enabled and Carry.TargetPlayer then
-            local modeTag = Carry.NativePromptTriggered and "Server" or "Lokal"
-            carryStatusLabel.Text = "  Status: Meng-carry " .. Carry.TargetPlayer.DisplayName .. " (" .. Carry.Style .. " | " .. modeTag .. ")"
+    local dragging = false
+    local function updateFromX(inputX)
+        local rel = math.clamp((inputX - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
+        local raw = minVal + (maxVal - minVal) * rel
+        if decimals and decimals > 0 then
+            local mult = 10 ^ decimals
+            raw = math.floor(raw * mult + 0.5) / mult
+        else
+            raw = math.floor(raw + 0.5)
         end
-        Utils.Notify("Gaya Carry", "Gaya diubah ke: Carry " .. val, Theme.Accent)
-    end)
+        State[stateKey] = raw
+        fill.Size = UDim2.new(rel, 0, 1, 0)
+        valLbl.Text = string.format(fmt, raw)
+        if onChanged then
+            onChanged(raw)
+        end
+    end
 
-    Components.AddSectionHeader(page, "Pilih Teman / Player untuk Di-Carry", 5)
+    CleanupManager:AddConnection(track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            updateFromX(input.Position.X)
+        end
+    end))
 
-    local carryListHolder = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
+    CleanupManager:AddConnection(Services.UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            updateFromX(input.Position.X)
+        end
+    end))
+
+    CleanupManager:AddConnection(Services.UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
+end
+
+function UIControls.CreateButton(section, langKey, colorOverride, order, onClick)
+    local btn = Utils.Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 34),
+        BackgroundColor3 = colorOverride or ActiveTheme.BgCard,
+        Text = GeoLangAPI:T(langKey),
+        TextColor3 = colorOverride and Color3.fromRGB(255, 255, 255) or ActiveTheme.AccentAlt,
+        TextSize = 12,
+        Font = Enum.Font.GothamBold,
+        LayoutOrder = order or 1,
+        Parent = section
+    })
+    Utils.Corner(btn, 8)
+    Utils.Stroke(btn, colorOverride or ActiveTheme.Accent, 1, 0.35)
+    GeoLangAPI:BindText(btn, langKey)
+
+    CleanupManager:AddConnection(btn.MouseButton1Click:Connect(function()
+        if onClick then
+            onClick()
+        end
+    end))
+    return btn
+end
+
+function UIControls.CreateDropdown(section, langKey, optionsList, getSelectedLabel, order, onSelect)
+    local wrapper = Utils.Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 36),
         AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        LayoutOrder = 6,
-        ZIndex = 14,
-    }, page)
-    Utils.Create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, carryListHolder)
+        BackgroundColor3 = ActiveTheme.BgCard,
+        BorderSizePixel = 0,
+        LayoutOrder = order or 1,
+        Parent = section
+    })
+    Utils.Corner(wrapper, 8)
 
-    local function refreshCarryPlayers()
-        for _, child in ipairs(carryListHolder:GetChildren()) do
-            if child:IsA("Frame") then
+    local topHeader = Utils.Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, 36),
+        BackgroundTransparency = 1,
+        Text = "",
+        Parent = wrapper
+    })
+
+    local titleLbl = Utils.Create("TextLabel", {
+        Size = UDim2.new(0.55, -12, 1, 0),
+        Position = UDim2.new(0, 12, 0, 0),
+        BackgroundTransparency = 1,
+        Text = GeoLangAPI:T(langKey),
+        TextColor3 = ActiveTheme.TextPrimary,
+        TextSize = 12,
+        Font = Enum.Font.GothamMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = topHeader
+    })
+    GeoLangAPI:BindText(titleLbl, langKey)
+
+    local selectedLbl = Utils.Create("TextLabel", {
+        Size = UDim2.new(0.45, -12, 1, 0),
+        Position = UDim2.new(0.55, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Text = getSelectedLabel() .. " ▼",
+        TextColor3 = ActiveTheme.Accent,
+        TextSize = 11,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        Parent = topHeader
+    })
+
+    local listFrame = Utils.Create("ScrollingFrame", {
+        Size = UDim2.new(1, -16, 0, 130),
+        Position = UDim2.new(0, 8, 0, 38),
+        BackgroundColor3 = ActiveTheme.BgPrimary,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 3,
+        ScrollBarImageColor3 = ActiveTheme.Accent,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = false,
+        Parent = wrapper
+    })
+    Utils.Corner(listFrame, 6)
+    Utils.Create("UIListLayout", {
+        Padding = UDim.new(0, 3),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = listFrame
+    })
+    Utils.Create("UIPadding", {
+        PaddingTop = UDim.new(0, 4),
+        PaddingBottom = UDim.new(0, 4),
+        PaddingLeft = UDim.new(0, 4),
+        PaddingRight = UDim.new(0, 4),
+        Parent = listFrame
+    })
+
+    local function rebuildOptions(items)
+        for _, child in ipairs(listFrame:GetChildren()) do
+            if child:IsA("TextButton") then
                 child:Destroy()
             end
         end
-        local count = 0
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                count = count + 1
-                local isSelected = (Carry.TargetPlayer == plr)
-                local row = Utils.Create("Frame", {
-                    Size = UDim2.new(1, 0, 0, 42),
-                    BackgroundColor3 = Theme.BgCard,
-                    BackgroundTransparency = 0.25,
-                    BorderSizePixel = 0,
-                    LayoutOrder = count,
-                    ZIndex = 14,
-                }, carryListHolder)
-                Utils.AddCorner(row, 8)
-                Utils.AddStroke(row, isSelected and Theme.Accent or Theme.BorderSubtle, 1, 0.25)
-
-                local nameLbl = Utils.Create("TextLabel", {
-                    Size = UDim2.new(1, -110, 1, 0),
-                    Position = UDim2.new(0, 12, 0, 0),
-                    BackgroundTransparency = 1,
-                    Font = Theme.FontFamily,
-                    Text = plr.DisplayName .. " (@" .. plr.Name .. ")",
-                    TextColor3 = Theme.TextPrimary,
-                    TextSize = 11,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    ZIndex = 15,
-                }, row)
-                Utils.RegisterText(nameLbl, false, Theme.TextPrimary)
-
-                local pickBtn = Utils.Create("TextButton", {
-                    Size = UDim2.new(0, 86, 0, 26),
-                    Position = UDim2.new(1, -96, 0.5, -13),
-                    BackgroundColor3 = isSelected and Theme.Success or Theme.Accent,
-                    Font = Theme.FontBold,
-                    Text = isSelected and "Terpilih ✓" or "Pilih Target",
-                    TextColor3 = Color3.new(1, 1, 1),
-                    TextSize = 11,
-                    AutoButtonColor = false,
-                    ZIndex = 15,
-                }, row)
-                Utils.AddCorner(pickBtn, 6)
-
-                pickBtn.MouseButton1Click:Connect(function()
-                    if Carry.TargetPlayer and Carry.TargetPlayer ~= plr then
-                        local _, oldHum = Utils.GetCharacter(Carry.TargetPlayer)
-                        if oldHum then
-                            oldHum.PlatformStand = false
-                            if oldHum:GetState() == Enum.HumanoidStateType.Physics then
-                                oldHum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                            end
-                        end
-                    end
-                    Carry.TargetPlayer = plr
-                    if Carry.Enabled then
-                        Carry.NativePromptTriggered = false
-                        Carry.NativePromptTriggered = Carry.TryNativeMapCarry(plr)
-                        local modeTag = Carry.NativePromptTriggered and "Server" or "Lokal"
-                        carryStatusLabel.Text = "  Status: Meng-carry " .. plr.DisplayName .. " (" .. Carry.Style .. " | " .. modeTag .. ")"
-                    else
-                        carryStatusLabel.Text = "  Target Terpilih: " .. plr.DisplayName .. " (Tekan tombol Carry)"
-                    end
-                    refreshCarryPlayers()
-                    Utils.Notify("Target Dipilih", "Siap meng-carry " .. plr.DisplayName .. ".", Theme.Accent)
-                end)
-            end
-        end
-
-        if count == 0 then
-            local empty = Utils.Create("Frame", {
-                Size = UDim2.new(1, 0, 0, 36),
-                BackgroundColor3 = Theme.BgCard,
-                BackgroundTransparency = 0.25,
-                BorderSizePixel = 0,
-                ZIndex = 14,
-            }, carryListHolder)
-            Utils.AddCorner(empty, 8)
-            Utils.Create("TextLabel", {
-                Size = UDim2.new(1, 0, 1, 0),
-                BackgroundTransparency = 1,
-                Font = Theme.FontFamily,
-                Text = "Belum ada pemain lain di server untuk di-carry.",
-                TextColor3 = Theme.TextMuted,
+        for idx, opt in ipairs(items) do
+            local labelText = type(opt) == "table" and opt.Label or tostring(opt)
+            local optBtn = Utils.Create("TextButton", {
+                Size = UDim2.new(1, -4, 0, 26),
+                BackgroundColor3 = ActiveTheme.BgSecondary,
+                Text = "  " .. labelText,
+                TextColor3 = ActiveTheme.TextPrimary,
                 TextSize = 11,
-                ZIndex = 15,
-            }, empty)
+                Font = Enum.Font.GothamSemibold,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                LayoutOrder = idx,
+                Parent = listFrame
+            })
+            Utils.Corner(optBtn, 5)
+            CleanupManager:AddConnection(optBtn.MouseButton1Click:Connect(function()
+                listFrame.Visible = false
+                if onSelect then
+                    onSelect(opt)
+                end
+                selectedLbl.Text = getSelectedLabel() .. " ▼"
+            end))
         end
     end
 
-    refreshCarryPlayers()
-    Utils.Track(Players.PlayerAdded:Connect(refreshCarryPlayers))
-    Utils.Track(Players.PlayerRemoving:Connect(function(plr)
-        if Carry.TargetPlayer == plr then
-            Carry.Stop()
-            Carry.TargetPlayer = nil
-            carryStatusLabel.Text = "  Target Terpilih: Belum ada pemain dipilih"
-        end
-        task.defer(refreshCarryPlayers)
+    rebuildOptions(optionsList)
+
+    CleanupManager:AddConnection(topHeader.MouseButton1Click:Connect(function()
+        listFrame.Visible = not listFrame.Visible
     end))
+
+    return {
+        Rebuild = rebuildOptions,
+        RefreshLabel = function()
+            selectedLbl.Text = getSelectedLabel() .. " ▼"
+        end
+    }
 end
 
 -- ============================================================================
--- TAB 5: DANCE & EMOTE STUDIO (Replicated ke Semua Device Pemain Lain)
+-- 7. BUILD ALL 6 TABS & FEATURE CONTROLLERS
 -- ============================================================================
-do
-    local page = Components.CreateTab("Dances", "💃", 5)
-    Components.AddSectionHeader(page, "Studio Dance & Emote (Replikasi R6 & R15)", 1)
+local PageMain     = CreateTab("Main",     "🛡️", "TabMain",     1)
+local PageMovement = CreateTab("Movement", "⚡", "TabMovement", 2)
+local PageCombat   = CreateTab("Combat",   "🎯", "TabCombat",   3)
+local PageVisuals  = CreateTab("Visuals",  "👁️", "TabVisuals",  4)
+local PageTeleport = CreateTab("Teleport", "🌀", "TabTeleport", 5)
+local PageSettings = CreateTab("Settings", "⚙️", "TabSettings", 6)
 
-    Components.AddSlider(page, "Kecepatan Gerakan Dance", 0.5, 2.5, 1.0, 1, 2, function(val)
-        Emotes.Speed = val
-        if Emotes.ActiveTrack then
-            pcall(function() Emotes.ActiveTrack:AdjustSpeed(val) end)
-        end
-    end)
+-- ----------------------------------------------------------------------------
+-- TAB 1: MAIN & CHARACTER DEFENSE + EMOTE REPLICATOR
+-- ----------------------------------------------------------------------------
+local SecDefense = UIControls.CreateSection(PageMain, "SecDefense", 1)
+UIControls.CreateToggle(SecDefense, "AntiAFK", "AntiAFK", 1)
+UIControls.CreateToggle(SecDefense, "AntiRagdoll", "AntiRagdoll", 2)
+UIControls.CreateToggle(SecDefense, "AntiFling", "AntiFling", 3)
+UIControls.CreateToggle(SecDefense, "AntiVoid", "AntiVoid", 4)
+UIControls.CreateToggle(SecDefense, "AutoHeal", "AutoHeal", 5)
 
-    -- Input Custom Animation ID Roblox (Tereplikasi ke pemain lain)
-    local customAnimCard = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 46),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        LayoutOrder = 3,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(customAnimCard, 9)
-    Utils.AddStroke(customAnimCard, Theme.BorderSubtle, 1, 0.3)
-
-    local animBox = Utils.Create("TextBox", {
-        Size = UDim2.new(1, -118, 0, 28),
-        Position = UDim2.new(0, 10, 0.5, -14),
-        BackgroundColor3 = Theme.BgControl,
-        Font = Theme.FontFamily,
-        PlaceholderText = "Custom Dance Animation ID (angka)...",
-        PlaceholderColor3 = Theme.TextMuted,
-        Text = "",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 11,
-        ClearTextOnFocus = false,
-        ZIndex = 15,
-    }, customAnimCard)
-    Utils.AddCorner(animBox, 6)
-    Utils.Create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, animBox)
-
-    local playCustomBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0, 92, 0, 28),
-        Position = UDim2.new(1, -102, 0.5, -14),
-        BackgroundColor3 = Theme.Accent,
-        Font = Theme.FontBold,
-        Text = "Play ID",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, customAnimCard)
-    Utils.AddCorner(playCustomBtn, 6)
-    Utils.RegisterAccent(playCustomBtn, "BackgroundColor3")
-
-    playCustomBtn.MouseButton1Click:Connect(function()
-        if animBox.Text ~= "" then
-            Emotes.PlayAsset("Custom Dance", animBox.Text)
-        else
-            Utils.Notify("Dance ID", "Masukkan angka ID animasi Roblox terlebih dahulu.", Theme.Warning)
-        end
-    end)
-
-    Components.AddButton(page, "Hentikan Dance / Reset Pose", "Hentikan animasi dance yang sedang aktif", "Stop Dance", 4, function()
-        Emotes.Stop()
-        Utils.Notify("Emote", "Dance dihentikan.", Theme.TextSecondary)
-    end)
-
-    Components.AddSectionHeader(page, "Daftar Dance Replikasi (R6 & R15)", 5)
-
-    local danceGrid = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        LayoutOrder = 6,
-        ZIndex = 14,
-    }, page)
-
-    Utils.Create("UIGridLayout", {
-        CellSize = UDim2.new(0.485, 0, 0, 34),
-        CellPadding = UDim2.new(0.03, 0, 0, 7),
-        SortOrder = Enum.SortOrder.LayoutOrder,
-    }, danceGrid)
-
-    for idx, d in ipairs(Emotes.Catalog) do
-        local btn = Utils.Create("TextButton", {
-            BackgroundColor3 = Theme.BgCard,
-            BackgroundTransparency = 0.22,
-            Font = Theme.FontBold,
-            Text = "🎵 " .. d.Label,
-            TextColor3 = Theme.TextPrimary,
-            TextSize = 11,
-            AutoButtonColor = false,
-            LayoutOrder = idx,
-            ZIndex = 15,
-        }, danceGrid)
-        Utils.AddCorner(btn, 8)
-        local stroke = Utils.AddStroke(btn, Theme.Accent, 1, 0.45)
-        Utils.RegisterAccent(stroke, "Color")
-        Utils.RegisterText(btn, true, Theme.TextPrimary)
-
-        btn.MouseButton1Click:Connect(function()
-            Emotes.PlayPreset(d)
+-- Anti-AFK Listener
+CleanupManager:AddConnection(LocalPlayer.Idled:Connect(function()
+    if CleanupManager.Alive and State.AntiAFK then
+        pcall(function()
+            Services.VirtualUser:CaptureController()
+            Services.VirtualUser:ClickButton2(Vector2.new())
         end)
     end
+end))
+
+-- Emote Replicator Section
+local SecEmote = UIControls.CreateSection(PageMain, "SecEmote", 2)
+local EmoteCatalog = {
+    { Label = "Wave", Id = "rbxassetid://507770239" },
+    { Label = "Dance 1", Id = "rbxassetid://507771019" },
+    { Label = "Dance 2", Id = "rbxassetid://507776043" },
+    { Label = "Dance 3", Id = "rbxassetid://507777268" },
+    { Label = "Laugh", Id = "rbxassetid://507770818" },
+    { Label = "Cheer", Id = "rbxassetid://507770677" },
+    { Label = "Point", Id = "rbxassetid://507770453" }
+}
+local ActiveEmoteTrack = nil
+
+local function StopCurrentEmote()
+    if ActiveEmoteTrack then
+        pcall(function()
+            ActiveEmoteTrack:Stop()
+            ActiveEmoteTrack:Destroy()
+        end)
+        ActiveEmoteTrack = nil
+    end
 end
 
--- ============================================================================
--- TAB 6: MOVEMENT & PHYSICS (Smooth Fly & Analog-Safe NoClip)
--- ============================================================================
-do
-    local page = Components.CreateTab("Movement", "⚡", 6)
-    Components.AddSectionHeader(page, "Pengaturan Lokomosi Karakter", 1)
+local function PlaySelectedEmote()
+    StopCurrentEmote()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
 
-    local wsSlider = Components.AddSlider(page, "Kecepatan Jalan (WalkSpeed)", 16, 250, 16, 0, 2, function(val)
-        State.WalkSpeed = val
-        local _, hum = Utils.GetCharacter()
-        if hum then hum.WalkSpeed = val end
+    local emoteId = "rbxassetid://507770239"
+    for _, item in ipairs(EmoteCatalog) do
+        if item.Label == State.SelectedEmote then
+            emoteId = item.Id
+            break
+        end
+    end
+
+    pcall(function()
+        local anim = Instance.new("Animation")
+        anim.AnimationId = emoteId
+        local animator = hum:FindFirstChildOfClass("Animator") or hum
+        local track = animator:LoadAnimation(anim)
+        track.Looped = true
+        track:Play()
+        ActiveEmoteTrack = track
     end)
+end
 
-    local jpSlider = Components.AddSlider(page, "Daya Lompat (JumpPower)", 50, 300, 50, 0, 3, function(val)
-        State.JumpPower = val
-        local _, hum = Utils.GetCharacter()
+UIControls.CreateDropdown(SecEmote, "SecEmote", EmoteCatalog, function()
+    return State.SelectedEmote
+end, 1, function(opt)
+    State.SelectedEmote = opt.Label
+end)
+
+UIControls.CreateButton(SecEmote, "PlayEmote", nil, 2, function()
+    PlaySelectedEmote()
+    Notify("Emote Replicator", "Playing: " .. State.SelectedEmote, 2)
+end)
+
+UIControls.CreateButton(SecEmote, "StopEmote", Color3.fromRGB(127, 29, 29), 3, function()
+    StopCurrentEmote()
+end)
+
+-- ----------------------------------------------------------------------------
+-- TAB 2: MOVEMENT (UNLIMITED WALKSPEED, JUMPPOWER, FLYSPEED, FLY, NOCLIP, INF JUMP)
+-- ----------------------------------------------------------------------------
+local SecSpeed = UIControls.CreateSection(PageMovement, "SecSpeed", 1)
+
+local WalkToggleUI = UIControls.CreateToggle(SecSpeed, "EnableWalkSpeed", "WalkSpeedEnabled", 1, function(enabled)
+    if not enabled then
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = 16 end
+        end)
+    end
+end)
+
+local WalkInputUI = UIControls.CreateUnlimitedNumberInput(
+    SecSpeed,
+    "WalkSpeedInput",
+    "WalkSpeedValue",
+    { 16, 50, 120, 350, 1000, 5000 },
+    32,
+    2,
+    function(val)
+        if State.WalkSpeedEnabled then
+            pcall(function()
+                local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.WalkSpeed = val end
+            end)
+        end
+    end
+)
+
+local JumpToggleUI = UIControls.CreateToggle(SecSpeed, "EnableJumpPower", "JumpPowerEnabled", 3, function(enabled)
+    if not enabled then
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.UseJumpPower = true
+                hum.JumpPower = 50
+            end
+        end)
+    end
+end)
+
+local JumpInputUI = UIControls.CreateUnlimitedNumberInput(
+    SecSpeed,
+    "JumpPowerInput",
+    "JumpPowerValue",
+    { 50, 100, 250, 600, 1500, 5000 },
+    75,
+    4,
+    function(val)
+        if State.JumpPowerEnabled then
+            pcall(function()
+                local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.UseJumpPower = true
+                    hum.JumpPower = val
+                end
+            end)
+        end
+    end
+)
+
+local SecFlight = UIControls.CreateSection(PageMovement, "SecFlight", 2)
+
+-- Smooth 6-DOF Fly Controller (BodyGyro + BodyVelocity / CFrame Hybrid)
+local FlyController = {
+    Active = false,
+    BodyGyro = nil,
+    BodyVel = nil
+}
+
+function FlyController:Stop()
+    self.Active = false
+    if self.BodyGyro then
+        pcall(function() self.BodyGyro:Destroy() end)
+        self.BodyGyro = nil
+    end
+    if self.BodyVel then
+        pcall(function() self.BodyVel:Destroy() end)
+        self.BodyVel = nil
+    end
+    pcall(function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then
-            hum.UseJumpPower = true
-            hum.JumpPower = val
+            hum.PlatformStand = false
         end
-    end)
-
-    local maxGrav = math.max(300, math.ceil(State.OriginalGravity))
-    local gravSlider = Components.AddSlider(page, "Gravitasi Dunia (Workspace Gravity)", 0, maxGrav, State.OriginalGravity, 1, 4, function(val)
-        State.Gravity = val
-        workspace.Gravity = val
-    end)
-
-    local origGravStr = string.format("%.1f", State.OriginalGravity)
-    Components.AddButton(page, "Reset Fisika ke Default", "Kembalikan WalkSpeed (16), JumpPower (50), Gravity (" .. origGravStr .. ")", "Reset All", 5, function()
-        wsSlider.SetValue(16, true)
-        jpSlider.SetValue(50, true)
-        gravSlider.SetValue(State.OriginalGravity, true)
-        Utils.Notify("Fisika Direset", "Nilai pergerakan dikembalikan ke bawaan.", Theme.Success)
-    end)
-
-    Components.AddSectionHeader(page, "Mode Navigasi & Inspeksi", 6)
-
-    Components.AddToggle(page, "Free-Flight Inspector (Fly)", "Terbang halus seperti admin map tanpa mundur-mundur atau tersangkut (PC & Mobile)", false, 7, function(on)
-        State.FlyEnabled = on
-        if on then
-            local _, hum = Utils.GetCharacter()
-            if hum and hum.Sit then
-                hum.Sit = false
-            end
-        else
-            Physics.CleanupFly()
-        end
-        Utils.Notify("Free-Flight", on and "Mode terbang halus aktif." or "Mode terbang dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddSlider(page, "Kecepatan Terbang (Flight Speed)", 20, 250, 65, 0, 8, function(val)
-        State.FlySpeed = val
-    end)
-
-    Components.AddToggle(
-        page,
-        "NoClip Geometry Inspector",
-        "tidak disarankan untuk fitur NoClip ingin menembus tetapi analog di tarik berlebihan, jika ingin menembus tarik analog secara perlahan-lahan",
-        false,
-        9,
-        function(on)
-            State.NoclipEnabled = on
-            if not on then Physics.RestoreNoclip() end
-            Utils.Notify("NoClip", on and "NoClip aktif (tarik analog perlahan saat menembus)." or "Kolisi dipulihkan.", on and Theme.Warning or Theme.TextSecondary)
-        end
-    )
-
-    Components.AddToggle(page, "Lompat Tanpa Batas (Infinite Jump)", "Lompat tanpa batas di udara", false, 10, function(on)
-        State.InfiniteJumpEnabled = on
     end)
 end
 
--- ============================================================================
--- TAB 7: TELEPORTASI BEBAS & VIEW LINTAS DUNIA (Unlimited Distance & Stream API)
--- ============================================================================
-do
-    local page = Components.CreateTab("Teleport", "⌖", 7)
-    local TPUI = {
-        WpDistanceLabels = {},
-        PlayerRows = {},
-    }
+function FlyController:Start()
+    self:Stop()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
 
-    Components.AddSectionHeader(page, "Telemetri Dunia & Teleport Bebas Tanpa Batas Jarak", 1)
+    self.Active = true
+    hum.PlatformStand = true
 
-    -- Kartu Telemetri Posisi & Dunia Aktif
-    local posCard = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 56),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        LayoutOrder = 2,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(posCard, 9)
-    Utils.AddStroke(posCard, Theme.BorderSubtle, 1, 0.3)
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "BimSakSin_FlyGyro"
+    bg.P = 9e4
+    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bg.CFrame = hrp.CFrame
+    bg.Parent = hrp
+    self.BodyGyro = bg
+    CleanupManager:AddInstance(bg)
 
-    UI.TelemetryLabels.Coords = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -112, 0, 20),
-        Position = UDim2.new(0, 12, 0, 7),
-        BackgroundTransparency = 1,
-        Font = Enum.Font.Code,
-        Text = "XYZ: 0.0, 0.0, 0.0",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 15,
-    }, posCard)
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "BimSakSin_FlyVel"
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bv.Velocity = Vector3.zero
+    bv.Parent = hrp
+    self.BodyVel = bv
+    CleanupManager:AddInstance(bv)
+end
 
-    TPUI.WorldStatusLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -112, 0, 18),
-        Position = UDim2.new(0, 12, 0, 29),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = "Lokasi: Main World | Jarak TP Terakhir: 0 m",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 15,
-    }, posCard)
-    Utils.RegisterText(TPUI.WorldStatusLbl, false, Theme.TextSecondary)
+CleanupManager:OnUnload(function()
+    FlyController:Stop()
+end)
 
-    local copyPosBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0, 92, 0, 30),
-        Position = UDim2.new(1, -104, 0.5, -15),
-        BackgroundColor3 = Theme.BgControl,
-        Font = Theme.FontBold,
-        Text = "Salin CFrame",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, posCard)
-    Utils.AddCorner(copyPosBtn, 6)
-
-    copyPosBtn.MouseButton1Click:Connect(function()
-        local _, _, root = Utils.GetCharacter()
-        if root then
-            local p = root.Position
-            local cfStr = string.format("CFrame.new(%.2f, %.2f, %.2f)", p.X, p.Y, p.Z)
-            if Utils.CopyText(cfStr) then
-                Utils.Notify("CFrame Tersalin", cfStr, Theme.Success)
-            else
-                Utils.Notify("CFrame Saat Ini", cfStr, Theme.Accent)
-            end
-        end
-    end)
-
-    -- Kontrol Jarak Teleport Bebas (Tentukan Sejauh Mana Jarak yang Ingin Ditempuh)
-    local freeDistCard = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 88),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        LayoutOrder = 3,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(freeDistCard, 9)
-    Utils.AddStroke(freeDistCard, Theme.BorderSubtle, 1, 0.3)
-
-    local distTitle = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 18),
-        Position = UDim2.new(0, 12, 0, 7),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = "Teleport Bebas Sesuka Hati (Atur Jarak Tanpa Batas)",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 15,
-    }, freeDistCard)
-    Utils.RegisterText(distTitle, true, Theme.TextPrimary)
-
-    local distInputBox = Utils.Create("TextBox", {
-        Size = UDim2.new(0.42, -10, 0, 28),
-        Position = UDim2.new(0, 10, 0, 30),
-        BackgroundColor3 = Theme.BgControl,
-        Font = Theme.FontFamily,
-        PlaceholderText = "Jarak (mis. 500, 50000)...",
-        PlaceholderColor3 = Theme.TextMuted,
-        Text = tostring(State.CustomTeleportDistance),
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 11,
-        ClearTextOnFocus = false,
-        ZIndex = 15,
-    }, freeDistCard)
-    Utils.AddCorner(distInputBox, 6)
-    Utils.Create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, distInputBox)
-
-    local tpForwardBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0.28, -4, 0, 28),
-        Position = UDim2.new(0.42, 4, 0, 30),
-        BackgroundColor3 = Theme.Accent,
-        Font = Theme.FontBold,
-        Text = "Maju Jarak",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, freeDistCard)
-    Utils.AddCorner(tpForwardBtn, 6)
-    Utils.RegisterAccent(tpForwardBtn, "BackgroundColor3")
-
-    local tpLookBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0.30, -14, 0, 28),
-        Position = UDim2.new(0.70, 4, 0, 30),
-        BackgroundColor3 = Theme.Spectral,
-        Font = Theme.FontBold,
-        Text = "Arah Kamera",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, freeDistCard)
-    Utils.AddCorner(tpLookBtn, 6)
-
-    TPUI.TargetPreviewLbl = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 18),
-        Position = UDim2.new(0, 12, 0, 63),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = "Jangkauan Siap: 500 m (Tanpa Batas Jarak)",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 15,
-    }, freeDistCard)
-    Utils.RegisterText(TPUI.TargetPreviewLbl, false, Theme.TextSecondary)
-
-    local function parseCustomDistance()
-        local raw = tostring(distInputBox.Text or ""):gsub("[^%d%.%-]", "")
-        local num = tonumber(raw)
-        if num and num == num and num > 0 then
-            State.CustomTeleportDistance = num
-            return num
-        end
-        return State.CustomTeleportDistance or 500
+local FlyToggleUI = UIControls.CreateToggle(SecFlight, "EnableFly", "FlyEnabled", 1, function(enabled)
+    if enabled then
+        FlyController:Start()
+    else
+        FlyController:Stop()
     end
+end)
 
-    distInputBox.FocusLost:Connect(function()
-        local d = parseCustomDistance()
-        TPUI.TargetPreviewLbl.Text = "Jangkauan Siap: " .. TeleportAPI.FormatDistance(d) .. " (Tanpa Batas Jarak)"
-    end)
+local FlyInputUI = UIControls.CreateUnlimitedNumberInput(
+    SecFlight,
+    "FlySpeedInput",
+    "FlySpeedValue",
+    { 60, 150, 400, 1000, 3000, 10000 },
+    120,
+    2
+)
 
-    tpForwardBtn.MouseButton1Click:Connect(function()
-        local _, _, root = Utils.GetCharacter()
-        local cam = workspace.CurrentCamera
-        if not root then
-            Utils.Notify("Gagal Teleport", "Karakter belum siap.", Theme.Danger)
-            return
-        end
-        local dist = parseCustomDistance()
-        local dir = cam and cam.CFrame.LookVector or root.CFrame.LookVector
-        local targetPos = root.Position + (dir * dist)
-        local destCF = CFrame.lookAt(targetPos, targetPos + dir)
-        local ok, actualDist = Utils.SafeTeleport(destCF)
-        if ok then
-            Utils.Notify("Teleport Maju", "Berpindah sejauh " .. TeleportAPI.FormatDistance(actualDist), Theme.Success)
-        end
-    end)
-
-    tpLookBtn.MouseButton1Click:Connect(function()
-        local char, _, root = Utils.GetCharacter()
-        local cam = workspace.CurrentCamera
-        if not root or not cam then
-            Utils.Notify("Gagal Teleport", "Kamera atau karakter belum siap.", Theme.Danger)
-            return
-        end
-        local maxRay = math.max(parseCustomDistance(), 15000)
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = { char }
-
-        local result = workspace:Raycast(cam.CFrame.Position, cam.CFrame.LookVector * maxRay, params)
-        local targetPos
-        if result then
-            targetPos = result.Position + Vector3.new(0, 3.2, 0)
-        else
-            targetPos = cam.CFrame.Position + (cam.CFrame.LookVector * parseCustomDistance())
-        end
-
-        local destCF = CFrame.lookAt(targetPos, targetPos + Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z))
-        local ok, actualDist = Utils.SafeTeleport(destCF)
-        if ok then
-            Utils.Notify("Teleport Arah Pandang", "Berpindah ke titik tujuan (" .. TeleportAPI.FormatDistance(actualDist) .. ")", Theme.Success)
-        end
-    end)
-
-    -- Input Koordinat Bebas (X, Y, Z) untuk lompat ke dunia/dimensi manapun di dalam map
-    local coordTpCard = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 48),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        LayoutOrder = 4,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(coordTpCard, 9)
-    Utils.AddStroke(coordTpCard, Theme.BorderSubtle, 1, 0.3)
-
-    local coordBox = Utils.Create("TextBox", {
-        Size = UDim2.new(1, -124, 0, 30),
-        Position = UDim2.new(0, 10, 0.5, -15),
-        BackgroundColor3 = Theme.BgControl,
-        Font = Theme.FontFamily,
-        PlaceholderText = "Koordinat XYZ bebas (mis. 12500, 450, -34000)...",
-        PlaceholderColor3 = Theme.TextMuted,
-        Text = "",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 11,
-        ClearTextOnFocus = false,
-        ZIndex = 15,
-    }, coordTpCard)
-    Utils.AddCorner(coordBox, 6)
-    Utils.Create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, coordBox)
-
-    local goCoordBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0, 96, 0, 30),
-        Position = UDim2.new(1, -106, 0.5, -15),
-        BackgroundColor3 = Theme.Success,
-        Font = Theme.FontBold,
-        Text = "TP Koordinat",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, coordTpCard)
-    Utils.AddCorner(goCoordBtn, 6)
-
-    goCoordBtn.MouseButton1Click:Connect(function()
-        local nums = {}
-        for numStr in string.gmatch(coordBox.Text or "", "[%-]?%d+%.?%d*") do
-            local n = tonumber(numStr)
-            if n then table.insert(nums, n) end
-        end
-        if #nums >= 3 then
-            local destCF = CFrame.new(nums[1], nums[2], nums[3])
-            local ok, dist = Utils.SafeTeleport(destCF)
-            if ok then
-                Utils.Notify("Teleport Koordinat", string.format("Berpindah ke %.0f, %.0f, %.0f (%s)", nums[1], nums[2], nums[3], TeleportAPI.FormatDistance(dist)), Theme.Success)
-            end
-        else
-            Utils.Notify("Format Koordinat", "Masukkan 3 angka koordinat X, Y, Z (contoh: 5000, 120, -8500).", Theme.Warning)
-        end
-    end)
-
-    -- Simpan & Kelola Waypoint Lintas Dunia
-    local wpInputCard = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 48),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        BorderSizePixel = 0,
-        LayoutOrder = 5,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(wpInputCard, 9)
-    Utils.AddStroke(wpInputCard, Theme.BorderSubtle, 1, 0.3)
-
-    local wpBox = Utils.Create("TextBox", {
-        Size = UDim2.new(1, -124, 0, 30),
-        Position = UDim2.new(0, 10, 0.5, -15),
-        BackgroundColor3 = Theme.BgControl,
-        Font = Theme.FontFamily,
-        PlaceholderText = "Simpan titik dunia/lokasi (mis. World 2, Dungeon)...",
-        PlaceholderColor3 = Theme.TextMuted,
-        Text = "",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 11,
-        ClearTextOnFocus = false,
-        ZIndex = 15,
-    }, wpInputCard)
-    Utils.AddCorner(wpBox, 6)
-    Utils.Create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8) }, wpBox)
-
-    local saveWpBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0, 96, 0, 30),
-        Position = UDim2.new(1, -106, 0.5, -15),
-        BackgroundColor3 = Theme.Accent,
-        Font = Theme.FontBold,
-        Text = "+ Simpan Titik",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 15,
-    }, wpInputCard)
-    Utils.AddCorner(saveWpBtn, 6)
-    Utils.RegisterAccent(saveWpBtn, "BackgroundColor3")
-
-    local wpListHolder = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        LayoutOrder = 6,
-        ZIndex = 14,
-    }, page)
-    Utils.Create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, wpListHolder)
-
-    local function renderWaypoints()
-        table.clear(TPUI.WpDistanceLabels)
-        for _, child in ipairs(wpListHolder:GetChildren()) do
-            if child:IsA("Frame") then child:Destroy() end
-        end
-        for idx, wp in ipairs(State.Waypoints) do
-            local row = Utils.Create("Frame", {
-                Size = UDim2.new(1, 0, 0, 44),
-                BackgroundColor3 = Theme.BgSecondary,
-                BackgroundTransparency = 0.25,
-                BorderSizePixel = 0,
-                LayoutOrder = idx,
-                ZIndex = 15,
-            }, wpListHolder)
-            Utils.AddCorner(row, 7)
-            Utils.AddStroke(row, Theme.BorderSubtle, 1, 0.3)
-
-            local infoLbl = Utils.Create("TextLabel", {
-                Size = UDim2.new(1, -138, 1, 0),
-                Position = UDim2.new(0, 10, 0, 0),
-                BackgroundTransparency = 1,
-                Font = Theme.FontFamily,
-                Text = string.format("%s | Jarak: -- m", wp.Name),
-                TextColor3 = Theme.TextPrimary,
-                TextSize = 11,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                TextTruncate = Enum.TextTruncate.AtEnd,
-                ZIndex = 16,
-            }, row)
-            TPUI.WpDistanceLabels[idx] = { Label = infoLbl, Waypoint = wp }
-
-            local tpBtn = Utils.Create("TextButton", {
-                Size = UDim2.new(0, 68, 0, 24),
-                Position = UDim2.new(1, -112, 0.5, -12),
-                BackgroundColor3 = Theme.Accent,
-                Font = Theme.FontBold,
-                Text = "Teleport",
-                TextColor3 = Color3.new(1, 1, 1),
-                TextSize = 11,
-                AutoButtonColor = false,
-                ZIndex = 16,
-            }, row)
-            Utils.AddCorner(tpBtn, 5)
-            Utils.RegisterAccent(tpBtn, "BackgroundColor3")
-
-            local delBtn = Utils.Create("TextButton", {
-                Size = UDim2.new(0, 28, 0, 24),
-                Position = UDim2.new(1, -38, 0.5, -12),
-                BackgroundColor3 = Theme.Danger,
-                Font = Theme.FontBold,
-                Text = "✕",
-                TextColor3 = Color3.new(1, 1, 1),
-                TextSize = 11,
-                AutoButtonColor = false,
-                ZIndex = 16,
-            }, row)
-            Utils.AddCorner(delBtn, 5)
-
-            tpBtn.MouseButton1Click:Connect(function()
-                local ok, dist = Utils.SafeTeleport(wp.CFrame)
-                if ok then
-                    Utils.Notify("Teleportasi Berhasil", string.format("Berpindah ke %s (%s)", wp.Name, TeleportAPI.FormatDistance(dist)), Theme.Success)
-                end
-            end)
-
-            delBtn.MouseButton1Click:Connect(function()
-                table.remove(State.Waypoints, idx)
-                renderWaypoints()
-            end)
-        end
-    end
-
-    saveWpBtn.MouseButton1Click:Connect(function()
-        local _, _, root = Utils.GetCharacter()
-        if not root then
-            Utils.Notify("Gagal Menyimpan", "Karakter utama belum tersedia.", Theme.Danger)
-            return
-        end
-        local name = wpBox.Text ~= "" and wpBox.Text or ("Titik #" .. tostring(#State.Waypoints + 1))
-        table.insert(State.Waypoints, { Name = name, CFrame = root.CFrame })
-        wpBox.Text = ""
-        renderWaypoints()
-        Utils.Notify("Waypoint Tersimpan", "Lokasi '" .. name .. "' berhasil disimpan.", Theme.Success)
-    end)
-
-    -- ========================================================================
-    -- VIEW & TELEPORT PEMAIN LAIN LINTAS DUNIA DALAM SATU MAP (UNLIMITED STREAM API)
-    -- ========================================================================
-    Components.AddSectionHeader(page, "View & Teleport Pemain Lintas Dunia (Tanpa Batas Jarak)", 7)
-
-    -- Banner Pemantau Aktif saat View Pemain di Dunia Lain
-    TPUI.ActiveViewCard = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 74),
-        BackgroundColor3 = Theme.BgSecondary,
-        BackgroundTransparency = 0.16,
-        BorderSizePixel = 0,
-        Visible = false,
-        LayoutOrder = 8,
-        ZIndex = 15,
-    }, page)
-    Utils.AddCorner(TPUI.ActiveViewCard, 9)
-    local viewStroke = Utils.AddStroke(TPUI.ActiveViewCard, Theme.Warning, 1.3, 0.15)
-
-    TPUI.ActiveViewTitle = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 18),
-        Position = UDim2.new(0, 10, 0, 6),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = "👁 Sedang Melihat: -",
-        TextColor3 = Theme.Warning,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 16,
-    }, TPUI.ActiveViewCard)
-
-    TPUI.ActiveViewDetail = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -20, 0, 16),
-        Position = UDim2.new(0, 10, 0, 24),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = "Dunia: - | Jarak: -",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 10,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        ZIndex = 16,
-    }, TPUI.ActiveViewCard)
-
-    local tpViewedBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0.54, -12, 0, 24),
-        Position = UDim2.new(0, 10, 0, 44),
-        BackgroundColor3 = Theme.Success,
-        Font = Theme.FontBold,
-        Text = "⚡ Teleport ke Pemain Ini",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 16,
-    }, TPUI.ActiveViewCard)
-    Utils.AddCorner(tpViewedBtn, 6)
-
-    local unviewBannerBtn = Utils.Create("TextButton", {
-        Size = UDim2.new(0.46, -12, 0, 24),
-        Position = UDim2.new(0.54, 2, 0, 44),
-        BackgroundColor3 = Theme.Danger,
-        Font = Theme.FontBold,
-        Text = "✕ Stop View",
-        TextColor3 = Color3.new(1, 1, 1),
-        TextSize = 11,
-        AutoButtonColor = false,
-        ZIndex = 16,
-    }, TPUI.ActiveViewCard)
-    Utils.AddCorner(unviewBannerBtn, 6)
-
-    local playerListHolder = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        BackgroundTransparency = 1,
-        LayoutOrder = 9,
-        ZIndex = 14,
-    }, page)
-    Utils.Create("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder }, playerListHolder)
-
-    local function stopSpectating(notifyUser)
-        TeleportAPI.StopRemoteView(notifyUser)
-        if TPUI.ActiveViewCard then
-            TPUI.ActiveViewCard.Visible = false
-        end
-    end
-
-    local function teleportToTargetPlayer(plr)
-        if not plr or not plr.Parent then
-            Utils.Notify("Pemain Keluar", "Pemain sudah meninggalkan server.", Theme.Warning)
-            return
-        end
-        local info = TeleportAPI.ResolvePlayerState(plr)
-        if info then
-            local destCF = info.CFrame * CFrame.new(0, 0.5, 3)
-            local ok, dist = Utils.SafeTeleport(destCF, plr)
-            if ok then
-                Utils.Notify(
-                    "Teleport Lintas Dunia",
-                    string.format("Menuju %s [%s] (%s)", plr.DisplayName, info.WorldName, TeleportAPI.FormatDistance(dist)),
-                    Theme.Success
-                )
-            end
-        else
-            Utils.Notify("Menunggu Data Posisi", "Pemain " .. plr.DisplayName .. " belum spawn di dunia manapun.", Theme.Warning)
-        end
-    end
-
-    tpViewedBtn.MouseButton1Click:Connect(function()
-        if State.SpectatingPlayer then
-            teleportToTargetPlayer(State.SpectatingPlayer)
-        end
-    end)
-
-    local function refreshPlayerList()
-        table.clear(TPUI.PlayerRows)
-        for _, child in ipairs(playerListHolder:GetChildren()) do
-            if child:IsA("Frame") then child:Destroy() end
-        end
-        local count = 0
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                count = count + 1
-                local isSpec = (State.SpectatingPlayer == plr)
-                local row = Utils.Create("Frame", {
-                    Size = UDim2.new(1, 0, 0, 56),
-                    BackgroundColor3 = Theme.BgCard,
-                    BackgroundTransparency = 0.25,
-                    BorderSizePixel = 0,
-                    LayoutOrder = count,
-                    ZIndex = 15,
-                }, playerListHolder)
-                Utils.AddCorner(row, 8)
-                Utils.AddStroke(row, isSpec and Theme.Warning or Theme.BorderSubtle, isSpec and 1.3 or 1, 0.25)
-
-                Utils.Create("TextLabel", {
-                    Size = UDim2.new(1, -158, 0, 18),
-                    Position = UDim2.new(0, 10, 0, 6),
-                    BackgroundTransparency = 1,
-                    Font = Theme.FontBold,
-                    Text = plr.DisplayName .. " (@" .. plr.Name .. ")",
-                    TextColor3 = Theme.TextPrimary,
-                    TextSize = 11,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    ZIndex = 16,
-                }, row)
-
-                local distLbl = Utils.Create("TextLabel", {
-                    Size = UDim2.new(1, -158, 0, 26),
-                    Position = UDim2.new(0, 10, 0, 24),
-                    BackgroundTransparency = 1,
-                    Font = Theme.FontFamily,
-                    Text = "Membaca posisi & dunia pemain...",
-                    TextColor3 = Theme.TextSecondary,
-                    TextSize = 10,
-                    TextWrapped = true,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    ZIndex = 16,
-                }, row)
-
-                TPUI.PlayerRows[plr] = distLbl
-
-                local tpBtn = Utils.Create("TextButton", {
-                    Size = UDim2.new(0, 68, 0, 28),
-                    Position = UDim2.new(1, -142, 0.5, -14),
-                    BackgroundColor3 = Theme.Accent,
-                    Font = Theme.FontBold,
-                    Text = "Teleport",
-                    TextColor3 = Color3.new(1, 1, 1),
-                    TextSize = 11,
-                    AutoButtonColor = false,
-                    ZIndex = 16,
-                }, row)
-                Utils.AddCorner(tpBtn, 5)
-                Utils.RegisterAccent(tpBtn, "BackgroundColor3")
-
-                local viewBtn = Utils.Create("TextButton", {
-                    Size = UDim2.new(0, 62, 0, 28),
-                    Position = UDim2.new(1, -68, 0.5, -14),
-                    BackgroundColor3 = isSpec and Theme.Warning or Theme.BgControl,
-                    Font = Theme.FontBold,
-                    Text = isSpec and "Unview" or "View",
-                    TextColor3 = Color3.new(1, 1, 1),
-                    TextSize = 11,
-                    AutoButtonColor = false,
-                    ZIndex = 16,
-                }, row)
-                Utils.AddCorner(viewBtn, 5)
-
-                tpBtn.MouseButton1Click:Connect(function()
-                    teleportToTargetPlayer(plr)
-                end)
-
-                viewBtn.MouseButton1Click:Connect(function()
-                    if State.SpectatingPlayer == plr then
-                        stopSpectating(true)
-                    else
-                        local _, info = TeleportAPI.StartRemoteView(plr)
-                        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-                        local distStr = (info and myRoot)
-                            and (" | Jarak: " .. TeleportAPI.FormatDistance((info.Position - myRoot.Position).Magnitude))
-                            or ""
-                        local worldStr = info and (" [" .. info.WorldName .. "]") or ""
-                        if TPUI.ActiveViewCard then
-                            TPUI.ActiveViewCard.Visible = true
-                            TPUI.ActiveViewTitle.Text = "👁 Sedang Melihat: " .. plr.DisplayName .. worldStr
-                        end
-                        Utils.Notify("Remote View Aktif", "Melihat " .. plr.DisplayName .. worldStr .. distStr, Theme.Warning)
-                    end
-                    refreshPlayerList()
-                end)
-            end
-        end
-
-        if count == 0 then
-            local empty = Utils.Create("Frame", {
-                Size = UDim2.new(1, 0, 0, 36),
-                BackgroundColor3 = Theme.BgCard,
-                BackgroundTransparency = 0.25,
-                BorderSizePixel = 0,
-                ZIndex = 15,
-            }, playerListHolder)
-            Utils.AddCorner(empty, 8)
-            Utils.Create("TextLabel", {
-                Size = UDim2.new(1, 0, 1, 0),
-                BackgroundTransparency = 1,
-                Font = Theme.FontFamily,
-                Text = "Belum ada pemain lain di server ini.",
-                TextColor3 = Theme.TextMuted,
-                TextSize = 11,
-                ZIndex = 16,
-            }, empty)
-        end
-    end
-
-    unviewBannerBtn.MouseButton1Click:Connect(function()
-        stopSpectating(true)
-        refreshPlayerList()
-    end)
-
-    -- Sinkronisasi Real-Time Jarak Tanpa Batas, Dunia Pemain Lain & Remote View Stream API
-    Utils.Track(RunService.Heartbeat:Connect(function()
-        local _, _, myRoot = Utils.GetCharacter(LocalPlayer)
-        local myPos = myRoot and myRoot.Position
-
-        if myPos and TPUI.WorldStatusLbl and TPUI.WorldStatusLbl.Parent then
-            local myWorld = TeleportAPI.DetectSubWorldName(LocalPlayer, myPos)
-            TPUI.WorldStatusLbl.Text = string.format("Lokasi: %s | TP Terakhir: %s", myWorld, TeleportAPI.FormatDistance(State.LastTeleportDistance))
-        end
-
-        -- 1. Update jarak ke semua Waypoint tersimpan (tanpa batas jarak)
-        for _, item in pairs(TPUI.WpDistanceLabels) do
-            if item.Label and item.Label.Parent then
-                if myPos then
-                    local d = (item.Waypoint.CFrame.Position - myPos).Magnitude
-                    item.Label.Text = string.format("%s | Jarak: %s", item.Waypoint.Name, TeleportAPI.FormatDistance(d))
-                else
-                    item.Label.Text = string.format("%s (%.0f, %.0f, %.0f)", item.Waypoint.Name, item.Waypoint.CFrame.X, item.Waypoint.CFrame.Y, item.Waypoint.CFrame.Z)
-                end
-            end
-        end
-
-        -- 2. Baca posisi, sub-dunia, status stream & jarak real-time semua pemain lain di map yang sama
-        for plr, lbl in pairs(TPUI.PlayerRows) do
-            if lbl and lbl.Parent then
-                local info = TeleportAPI.ResolvePlayerState(plr)
-                if info and myPos then
-                    local dist = (info.Position - myPos).Magnitude
-                    local streamTag = info.IsStreamedIn and "Terlihat" or "Lintas Dunia"
-                    lbl.Text = string.format(
-                        "Jarak: %s (%s)
-%s | XYZ: %.0f, %.0f, %.0f",
-                        TeleportAPI.FormatDistance(dist),
-                        streamTag,
-                        info.WorldName,
-                        info.Position.X,
-                        info.Position.Y,
-                        info.Position.Z
-                    )
-                elseif info then
-                    lbl.Text = string.format("%s | XYZ: %.0f, %.0f, %.0f", info.WorldName, info.Position.X, info.Position.Y, info.Position.Z)
-                else
-                    lbl.Text = "Jarak: Menunggu pemain spawn di map..."
-                end
-            end
-        end
-
-        -- 3. Jaga kamera & Streaming API terus memuat dunia pemain yang sedang dilihat
-        local specPlr = State.SpectatingPlayer
-        if specPlr then
-            if not specPlr.Parent then
-                stopSpectating(false)
-                refreshPlayerList()
-            else
-                local info = TeleportAPI.StepRemoteView()
-                if TPUI.ActiveViewCard and TPUI.ActiveViewCard.Visible then
-                    if info and myPos then
-                        local dist = (info.Position - myPos).Magnitude
-                        TPUI.ActiveViewTitle.Text = string.format("👁 Melihat: %s [%s]", specPlr.DisplayName, info.WorldName)
-                        TPUI.ActiveViewDetail.Text = string.format(
-                            "Jarak: %s | XYZ: %.0f, %.0f, %.0f",
-                            TeleportAPI.FormatDistance(dist),
-                            info.Position.X,
-                            info.Position.Y,
-                            info.Position.Z
-                        )
-                    else
-                        TPUI.ActiveViewTitle.Text = "👁 Melihat: " .. specPlr.DisplayName
-                        TPUI.ActiveViewDetail.Text = "Menyinkronkan dunia & posisi pemain..."
+local NoclipToggleUI = UIControls.CreateToggle(SecFlight, "EnableNoclip", "NoclipEnabled", 3, function(enabled)
+    if not enabled then
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
                     end
                 end
             end
-        elseif TPUI.ActiveViewCard and TPUI.ActiveViewCard.Visible then
-            TPUI.ActiveViewCard.Visible = false
-        end
-    end))
+        end)
+    end
+end)
 
-    refreshPlayerList()
-    Utils.Track(Players.PlayerAdded:Connect(refreshPlayerList))
-    Utils.Track(Players.PlayerRemoving:Connect(function(plr)
-        if State.SpectatingPlayer == plr then
-            stopSpectating(false)
-        end
-        task.defer(refreshPlayerList)
-    end))
-end
+local InfJumpToggleUI = UIControls.CreateToggle(SecFlight, "EnableInfJump", "InfiniteJumpEnabled", 4)
 
--- ============================================================================
--- TAB 8: VISUALS & ENVIRONMENT
--- ============================================================================
-do
-    local page = Components.CreateTab("Visuals", "☀", 8)
-    Components.AddSectionHeader(page, "Kontrol Kamera & Pencahayaan", 1)
-
-    local fovSlider = Components.AddSlider(page, "Sudut Pandang Kamera (FOV)", 40, 120, 70, 0, 2, function(val)
-        State.CameraFOV = val
-        if workspace.CurrentCamera then
-            workspace.CurrentCamera.FieldOfView = val
-        end
-    end)
-
-    UI.FullbrightToggle = Components.AddToggle(page, "Pencahayaan Penuh (Fullbright Studio)", "Hilangkan bayangan gelap dan terangkan pencahayaan", false, 3, function(on)
-        State.FullbrightEnabled = on
-        if on then
-            Lighting.Brightness = 2
-            Lighting.ClockTime = 14
-            Lighting.GlobalShadows = false
-            Lighting.Ambient = Color3.fromRGB(178, 178, 178)
-            Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
-        else
-            local orig = State.OriginalLighting
-            Lighting.Brightness = orig.Brightness
-            Lighting.ClockTime = orig.ClockTime
-            Lighting.GlobalShadows = orig.GlobalShadows
-            Lighting.Ambient = orig.Ambient
-            Lighting.OutdoorAmbient = orig.OutdoorAmbient
-        end
-        Utils.Notify("Lighting", on and "Fullbright aktif." or "Pencahayaan asli dipulihkan.", Theme.Accent)
-    end)
-
-    UI.NoFogToggle = Components.AddToggle(page, "Hapus Kabut Atmosfer (No Fog)", "Hapus kabut FogEnd dan Atmosphere Density modern", false, 4, function(on)
-        State.NoFogEnabled = on
-        local currentAtmo = Lighting:FindFirstChildOfClass("Atmosphere")
-        if on then
-            Lighting.FogEnd = 100000
-            if currentAtmo then
-                if not State.OriginalAtmosphere or State.OriginalAtmosphere.Instance ~= currentAtmo then
-                    State.OriginalAtmosphere = { Instance = currentAtmo, Density = currentAtmo.Density }
-                end
-                currentAtmo.Density = 0
+-- Infinite Jump Handler
+CleanupManager:AddConnection(Services.UserInputService.JumpRequest:Connect(function()
+    if CleanupManager.Alive and State.InfiniteJumpEnabled then
+        pcall(function()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
             end
-        else
-            Lighting.FogEnd = State.OriginalLighting.FogEnd
-            if State.OriginalAtmosphere and State.OriginalAtmosphere.Instance and State.OriginalAtmosphere.Instance.Parent then
-                State.OriginalAtmosphere.Instance.Density = State.OriginalAtmosphere.Density
-            end
-        end
-    end)
+        end)
+    end
+end))
 
-    local todSlider = Components.AddSlider(page, "Waktu Siang / Malam Klien (Jam)", 0, 24, math.floor(Lighting.ClockTime), 1, 5, function(val)
-        Lighting.ClockTime = val
-    end)
+UIControls.CreateButton(SecFlight, "ResetPhysics", Color3.fromRGB(51, 65, 85), 5, function()
+    State.WalkSpeedEnabled = false
+    State.WalkSpeedValue = 16
+    State.JumpPowerEnabled = false
+    State.JumpPowerValue = 50
+    State.FlyEnabled = false
+    State.FlySpeedValue = 120
+    State.NoclipEnabled = false
+    State.InfiniteJumpEnabled = false
 
-    Components.AddButton(page, "Reset Kamera & Pencahayaan", "Pulihkan FOV (70), toggle, dan pencahayaan bawaan", "Reset", 6, function()
-        fovSlider.SetValue(70, true)
-        if UI.FullbrightToggle then UI.FullbrightToggle.SetState(false, true) end
-        if UI.NoFogToggle then UI.NoFogToggle.SetState(false, true) end
+    FlyController:Stop()
+    WalkToggleUI.Refresh()
+    WalkInputUI.SetValue(16)
+    JumpToggleUI.Refresh()
+    JumpInputUI.SetValue(50)
+    FlyToggleUI.Refresh()
+    FlyInputUI.SetValue(120)
+    NoclipToggleUI.Refresh()
+    InfJumpToggleUI.Refresh()
 
-        local orig = State.OriginalLighting
-        Lighting.Brightness = orig.Brightness
-        Lighting.ClockTime = orig.ClockTime
-        Lighting.FogEnd = orig.FogEnd
-        Lighting.FogStart = orig.FogStart
-        Lighting.GlobalShadows = orig.GlobalShadows
-        Lighting.Ambient = orig.Ambient
-        Lighting.OutdoorAmbient = orig.OutdoorAmbient
-        todSlider.SetValue(orig.ClockTime, false)
-
-        if State.OriginalAtmosphere and State.OriginalAtmosphere.Instance and State.OriginalAtmosphere.Instance.Parent then
-            State.OriginalAtmosphere.Instance.Density = State.OriginalAtmosphere.Density
-        end
-        Utils.Notify("Visual Direset", "Kamera, toggle, dan pencahayaan dipulihkan.", Theme.Success)
-    end)
-end
-
--- ============================================================================
--- TAB 9: SETTINGS, ANTI-BUG / ERROR ENGINE, FONT & COLOR CUSTOMIZER
--- ============================================================================
-local unloadHub = nil
-
-do
-    local page = Components.CreateTab("Settings", "⚙", 9)
-    Components.AddSectionHeader(page, "Sistem Anti-Bug / Error & Anti-AFK", 1)
-
-    Components.AddToggle(page, "Anti-Bug & Auto-Recovery Engine (AKTIF / OFF)", "Mencegah bug/error pada setiap fitur dan langsung memperbaiki otomatis jika terjadi gangguan", true, 2, function(on)
-        Protection.AntiBugEnabled = on
-        if UI.StatusLabel and UI.StatusLabel.Parent then
-            UI.StatusLabel.Text = on and "Anti-Bug: AKTIF" or "Anti-Bug: OFF"
-        end
-        Utils.Notify("Anti-Bug Engine", on and "Anti-Bug & Auto-Repair AKTIF." or "Anti-Bug dimatikan (OFF).", on and Theme.Success or Theme.Warning)
-    end)
-
-    Components.AddToggle(page, "Anti-AFK Otomatis (Semua Map)", "Mencegah disconnect otomatis saat diam lebih dari 20 menit", true, 3, function(on)
-        Protection.AntiAFKEnabled = on
-        Utils.Notify("Anti-AFK", on and "Anti-AFK aktif." or "Anti-AFK dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddSectionHeader(page, "Kustomisasi Font & Warna Panel Menu", 4)
-
-    Components.AddChipSelector(page, "Pilih Gaya Font Panel Menu", {
-        { Label = "Gotham Modern", Value = "Gotham", Font = Enum.Font.GothamSemibold },
-        { Label = "Fredoka Bulat", Value = "Fredoka", Font = Enum.Font.FredokaOne },
-        { Label = "Creepster Spooky", Value = "Creepster", Font = Enum.Font.Creepster },
-        { Label = "Fondamento Klasik", Value = "Fondamento", Font = Enum.Font.Fondamento },
-        { Label = "Bangers Komik", Value = "Bangers", Font = Enum.Font.Bangers },
-        { Label = "Roboto Mono", Value = "RobotoMono", Font = Enum.Font.RobotoMono },
-        { Label = "Merriweather", Value = "Merriweather", Font = Enum.Font.Merriweather },
-        { Label = "Ubuntu Clean", Value = "Ubuntu", Font = Enum.Font.Ubuntu },
-        { Label = "Oswald Tegas", Value = "Oswald", Font = Enum.Font.Oswald },
-    }, "Gotham", 5, function(val)
-        local fontMap = {
-            Gotham = { Enum.Font.GothamSemibold, Enum.Font.GothamBold },
-            Fredoka = { Enum.Font.FredokaOne, Enum.Font.FredokaOne },
-            Creepster = { Enum.Font.Creepster, Enum.Font.Creepster },
-            Fondamento = { Enum.Font.Fondamento, Enum.Font.Fondamento },
-            Bangers = { Enum.Font.Bangers, Enum.Font.Bangers },
-            RobotoMono = { Enum.Font.RobotoMono, Enum.Font.RobotoMono },
-            Merriweather = { Enum.Font.Merriweather, Enum.Font.Merriweather },
-            Ubuntu = { Enum.Font.Ubuntu, Enum.Font.Ubuntu },
-            Oswald = { Enum.Font.Oswald, Enum.Font.Oswald },
-        }
-        local pair = fontMap[val] or fontMap.Gotham
-        Theme.FontFamily = pair[1]
-        Theme.FontBold = pair[2]
-        Utils.ApplyMenuFontAndColors()
-        Utils.Notify("Font Diperbarui", "Menggunakan font: " .. val, Theme.Accent)
-    end)
-
-    Components.AddChipSelector(page, "Warna Aksen Tema Panel", {
-        { Label = "Pumpkin Gold", Value = Color3.fromRGB(255, 118, 26), Color = Color3.fromRGB(255, 118, 26) },
-        { Label = "Blood Crimson", Value = Color3.fromRGB(220, 48, 78), Color = Color3.fromRGB(220, 48, 78) },
-        { Label = "Spectral Violet", Value = Color3.fromRGB(155, 89, 245), Color = Color3.fromRGB(155, 89, 245) },
-        { Label = "Poison Emerald", Value = Color3.fromRGB(39, 194, 108), Color = Color3.fromRGB(39, 194, 108) },
-        { Label = "Cobalt Blue", Value = Color3.fromRGB(79, 124, 255), Color = Color3.fromRGB(79, 124, 255) },
-        { Label = "Amber Gold", Value = Color3.fromRGB(243, 168, 24), Color = Color3.fromRGB(243, 168, 24) },
-    }, Color3.fromRGB(255, 118, 26), 6, function(val)
-        Utils.SetAccentColor(val)
-        Utils.Notify("Tema Diperbarui", "Warna aksen panel diperbarui.", val)
-    end)
-
-    Components.AddChipSelector(page, "Warna Font Panel Menu", {
-        { Label = "Auto Kontras", Value = "Auto", Color = Color3.fromRGB(255, 210, 140) },
-        { Label = "Putih Tulang", Value = Color3.fromRGB(255, 246, 235), Color = Color3.fromRGB(255, 246, 235) },
-        { Label = "Oranye Labu", Value = Color3.fromRGB(255, 162, 72), Color = Color3.fromRGB(255, 162, 72) },
-        { Label = "Ungu Pastel", Value = Color3.fromRGB(218, 178, 255), Color = Color3.fromRGB(218, 178, 255) },
-        { Label = "Hijau Mint", Value = Color3.fromRGB(145, 255, 195), Color = Color3.fromRGB(145, 255, 195) },
-        { Label = "Hitam Gelap", Value = Color3.fromRGB(22, 18, 30), Color = Color3.fromRGB(22, 18, 30) },
-    }, "Auto", 7, function(val)
-        Theme.FontColorMode = val
-        Utils.ApplyMenuFontAndColors()
-    end)
-
-    Components.AddChipSelector(page, "Latar Belakang Font Menu (Tipis & Adaptif)", {
-        { Label = "Tanpa Latar", Value = "None", Color = Color3.fromRGB(40, 31, 58) },
-        { Label = "Obsidian Tipis", Value = Color3.fromRGB(16, 12, 24), Color = Color3.fromRGB(16, 12, 24) },
-        { Label = "Ungu Malam", Value = Color3.fromRGB(36, 22, 58), Color = Color3.fromRGB(36, 22, 58) },
-        { Label = "Coklat Labu", Value = Color3.fromRGB(48, 26, 14), Color = Color3.fromRGB(48, 26, 14) },
-        { Label = "Merah Gelap", Value = Color3.fromRGB(52, 16, 24), Color = Color3.fromRGB(52, 16, 24) },
-        { Label = "Putih Kabut", Value = Color3.fromRGB(238, 232, 245), Color = Color3.fromRGB(238, 232, 245) },
-    }, "None", 8, function(val)
-        if val == "None" then
-            Theme.FontBgEnabled = false
-        else
-            Theme.FontBgEnabled = true
-            Theme.FontBgColor = val
-            Theme.FontBgTransparency = 0.68
-        end
-        Utils.ApplyMenuFontAndColors()
-    end)
-
-    Components.AddSectionHeader(page, "Kontrol Pintasan & Pembersihan Panel", 9)
-
-    Components.AddButton(page, "Pintasan Sembunyikan UI (RightShift)", "Atau ketuk logo labu 3D di layar kapan saja", "Hide UI", 10, function()
-        App.IsOpen = false
-        UI.MainFrame.Visible = false
-    end)
-
-    unloadHub = function()
-        State.FlyEnabled = false
-        State.NoclipEnabled = false
-        State.InfiniteJumpEnabled = false
-        ESP.Enabled = false
-        ItemESP.Enabled = false
-        GeneratorESP.Enabled = false
-        Combat.AimbotEnabled = false
-        Combat.AutoParryEnabled = false
-        Combat.MeleeImmunity = false
-        Combat.HungerThirstGuard = false
-        Protection.AntiAFKEnabled = false
-        Protection.AntiBugEnabled = false
-
-        Physics.CleanupFly()
-        Physics.RestoreNoclip()
-        ESP.ClearAll()
-        ItemESP.ClearAll()
-        GeneratorESP.ClearAll()
-        Combat.HideLaser()
-        if Combat.LaserPart then Combat.LaserPart:Destroy() end
-        Carry.Stop()
-        Emotes.Stop()
-        Protection.RestoreEnemyHitboxes()
-
-        TeleportAPI.StopRemoteView(false)
-
-        local _, hum, root = Utils.GetCharacter()
-        if root and State.IsTeleportLocking then
-            root.Anchored = State.PreTeleportAnchored
-            State.IsTeleportLocking = false
-        end
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then
             hum.WalkSpeed = 16
             hum.JumpPower = 50
             hum.PlatformStand = false
-            hum.AutoRotate = true
-            if workspace.CurrentCamera then
-                workspace.CurrentCamera.CameraSubject = hum
-                workspace.CurrentCamera.FieldOfView = 70
-            end
-        end
-
-        workspace.Gravity = State.OriginalGravity
-
-        local orig = State.OriginalLighting
-        Lighting.Brightness = orig.Brightness
-        Lighting.ClockTime = orig.ClockTime
-        Lighting.FogEnd = orig.FogEnd
-        Lighting.FogStart = orig.FogStart
-        Lighting.GlobalShadows = orig.GlobalShadows
-        Lighting.Ambient = orig.Ambient
-        Lighting.OutdoorAmbient = orig.OutdoorAmbient
-
-        if State.OriginalAtmosphere and State.OriginalAtmosphere.Instance and State.OriginalAtmosphere.Instance.Parent then
-            State.OriginalAtmosphere.Instance.Density = State.OriginalAtmosphere.Density
-        end
-
-        for _, conn in ipairs(Connections) do
-            if conn and conn.Connected then
-                conn:Disconnect()
-            end
-        end
-        table.clear(Connections)
-        table.clear(State.AccentObjects)
-        table.clear(State.AccentCallbacks)
-        table.clear(State.ActiveToggleTracks)
-        table.clear(State.ThemedTexts)
-        table.clear(ESP.RandomColorMap)
-        table.clear(Protection.HungerThirstValues)
-
-        if UI.ScreenGui then
-            UI.ScreenGui:Destroy()
-        end
-    end
-
-    if typeof(getgenv) == "function" then
-        getgenv().BSS_UnloadOld = unloadHub
-    end
-
-    Components.AddButton(page, "Unload & Bersihkan Panel", "Putus semua loop, pulihkan bawaan karakter/map, dan tutup GUI", "Unload", 11, unloadHub)
-end
-
--- ============================================================================
--- TAB 10: INFORMASI (DISCORD, DONASI & PESAN BANTUAN BUG/ERROR)
--- ============================================================================
-do
-    local page = Components.CreateTab("Informasi", "ⓘ", 10)
-    Components.AddSectionHeader(page, "Informasi Pembuat & Dukungan", 1)
-
-    local infoCard = Utils.Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 96),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.22,
-        BorderSizePixel = 0,
-        LayoutOrder = 2,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(infoCard, 9)
-    local stroke = Utils.AddStroke(infoCard, Theme.Accent, 1.2, 0.25)
-    Utils.RegisterAccent(stroke, "Color")
-
-    local h1 = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 20),
-        Position = UDim2.new(0, 12, 0, 8),
-        BackgroundTransparency = 1,
-        Font = Theme.FontBold,
-        Text = "🎃 " .. App.Name .. " — Universal Edition",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 14,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 15,
-    }, infoCard)
-    Utils.RegisterText(h1, true, Theme.TextPrimary)
-
-    local h2 = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, -24, 0, 60),
-        Position = UDim2.new(0, 12, 0, 30),
-        BackgroundTransparency = 1,
-        Font = Theme.FontFamily,
-        Text = "Terima kasih telah menggunakan BimSakSin Hub v3.0! Semoga hari-hari kalian menyenangkan.\njika ada bug/error pada fitur dan fitur tidak berfungsi, beritau admin/dev melaluin discord yang tertera.",
-        TextColor3 = Theme.TextSecondary,
-        TextSize = 11,
-        TextWrapped = true,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        ZIndex = 15,
-    }, infoCard)
-    Utils.RegisterText(h2, false, Theme.TextSecondary)
-
-    Components.AddSectionHeader(page, "Tautan Resmi Komunitas & Donasi", 3)
-
-    Components.AddButton(page, "Link Donasi / Dukungan Dev", App.DonationUrl, "Salin Link", 4, function()
-        if Utils.CopyText(App.DonationUrl) then
-            Utils.Notify("Link Donasi Tersalin!", App.DonationUrl, Theme.Success)
-        else
-            Utils.Notify("Link Donasi", App.DonationUrl, Theme.Accent)
         end
     end)
+    Notify("Movement Physics", "Restored to default WalkSpeed (16) & JumpPower (50)", 2.5)
+end)
 
-    Components.AddButton(page, "Link Server Discord Resmi", App.DiscordUrl, "Salin Link", 5, function()
-        if Utils.CopyText(App.DiscordUrl) then
-            Utils.Notify("Link Discord Tersalin!", App.DiscordUrl, Theme.Success)
-        else
-            Utils.Notify("Link Discord", App.DiscordUrl, Theme.Accent)
-        end
+-- ----------------------------------------------------------------------------
+-- TAB 3: COMBAT (AIMBOT + FOV CIRCLE)
+-- ----------------------------------------------------------------------------
+local SecAimbot = UIControls.CreateSection(PageCombat, "SecAimbot", 1)
+UIControls.CreateToggle(SecAimbot, "EnableAimbot", "AimbotEnabled", 1)
+UIControls.CreateToggle(SecAimbot, "ShowFOV", "AimbotFOVVisible", 2)
+UIControls.CreateSlider(SecAimbot, "AimFOV", "AimbotFOV", 30, 600, 0, 3)
+UIControls.CreateSlider(SecAimbot, "AimSmooth", "AimbotSmoothness", 0.05, 1.0, 2, 4)
+UIControls.CreateDropdown(SecAimbot, "Aimbot Target", { "Head", "HumanoidRootPart", "UpperTorso" }, function()
+    return State.AimbotTargetPart
+end, 5, function(opt)
+    State.AimbotTargetPart = opt
+end)
+UIControls.CreateToggle(SecAimbot, "TeamCheck", "AimbotTeamCheck", 6)
+UIControls.CreateToggle(SecAimbot, "WallCheck", "AimbotWallCheck", 7)
+
+-- FOV Circle Overlay (Drawing API with UI Stroke fallback)
+local FOVCircleDrawing = nil
+if Env.HasDrawing then
+    pcall(function()
+        local circle = Drawing.new("Circle")
+        circle.Thickness = 1.6
+        circle.NumSides = 64
+        circle.Radius = State.AimbotFOV
+        circle.Filled = false
+        circle.Color = ActiveTheme.Accent
+        circle.Transparency = 0.85
+        circle.Visible = false
+        FOVCircleDrawing = circle
+        CleanupManager:AddDrawing(circle)
     end)
 end
 
--- ============================================================================
--- 16. RUNTIME LOOPS & EVENT HANDLERS
--- ============================================================================
-do
-    local function togglePanelVisibility()
-        App.IsOpen = not App.IsOpen
-        UI.MainFrame.Visible = App.IsOpen
+local function IsSameTeam(plr)
+    if not LocalPlayer.Team or not plr.Team then
+        return false
     end
+    return LocalPlayer.Team == plr.Team
+end
 
-    UI.FloatingToggle.MouseButton1Click:Connect(togglePanelVisibility)
-    UI.CloseBtn.MouseButton1Click:Connect(function()
-        App.IsOpen = false
-        UI.MainFrame.Visible = false
-        Utils.Notify("Disembunyikan", "Ketuk logo labu 3D atau tekan RightShift untuk membuka.", Theme.Accent)
-    end)
-
-    local function getTitleFittedMinWidth()
-        local titleWidth = (UI.TitleLabel and UI.TitleLabel.TextBounds.X > 0) and UI.TitleLabel.TextBounds.X or 172
-        return math.max(278, math.ceil(titleWidth) + 148)
+local function IsTargetVisible(targetPart, targetChar)
+    if not State.AimbotWallCheck then
+        return true
     end
+    local origin = Camera.CFrame.Position
+    local direction = targetPart.Position - origin
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { LocalPlayer.Character, targetChar }
+    local result = Services.Workspace:Raycast(origin, direction, params)
+    return result == nil
+end
 
-    local function applyResponsiveLayout(panelWidth)
-        local sidebarW = (panelWidth < 500) and math.clamp(math.floor(panelWidth * 0.30), 116, 166) or 166
-        UI.Sidebar.Size = UDim2.new(0, sidebarW, 1, -54)
-        UI.ContentContainer.Size = UDim2.new(1, -sidebarW, 1, -54)
-        UI.ContentContainer.Position = UDim2.new(0, sidebarW, 0, 54)
-    end
+local function GetClosestAimbotTarget()
+    local bestPart = nil
+    local shortestDist = State.AimbotFOV
+    local mouseLoc = Services.UserInputService:GetMouseLocation()
 
-    -- Drag Resize
-    do
-        local resizing = false
-        local resizeInput = nil
-        local resizeStartPos = nil
-        local resizeStartSize = nil
-
-        Utils.Track(UI.ResizeHandle.InputBegan:Connect(function(input)
-            if App.IsMinimized then return end
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                resizing = true
-                resizeInput = input
-                resizeStartPos = input.Position
-                resizeStartSize = UI.MainFrame.AbsoluteSize
-            end
-        end))
-
-        Utils.Track(UserInputService.InputChanged:Connect(function(input)
-            if resizing and resizeStartPos and resizeStartSize and (input == resizeInput or input.UserInputType == Enum.UserInputType.MouseMovement) then
-                local delta = input.Position - resizeStartPos
-                local vp = (UI.ScreenGui and UI.ScreenGui.AbsoluteSize) or Vector2.new(1280, 720)
-                local minW = math.max(320, getTitleFittedMinWidth())
-                local maxW = math.max(minW, vp.X - 24)
-                local maxH = math.max(220, vp.Y - 24)
-
-                local newW = math.clamp(math.floor(resizeStartSize.X + delta.X + 0.5), minW, maxW)
-                local newH = math.clamp(math.floor(resizeStartSize.Y + delta.Y + 0.5), 220, maxH)
-
-                App.ExpandedWidth = newW
-                App.ExpandedHeight = newH
-                UI.MainFrame.Size = UDim2.new(0, newW, 0, newH)
-                applyResponsiveLayout(newW)
-            end
-        end))
-
-        Utils.Track(UserInputService.InputEnded:Connect(function(input)
-            if resizing and (input == resizeInput or input.UserInputType == Enum.UserInputType.MouseButton1) then
-                resizing = false
-                resizeInput = nil
-            end
-        end))
-    end
-
-    UI.MinimizeBtn.MouseButton1Click:Connect(function()
-        if not App.IsMinimized then
-            local curSize = UI.MainFrame.AbsoluteSize
-            if curSize.X >= 260 and curSize.Y >= 180 then
-                App.ExpandedWidth = math.floor(curSize.X + 0.5)
-                App.ExpandedHeight = math.floor(curSize.Y + 0.5)
-            end
-        end
-
-        App.IsMinimized = not App.IsMinimized
-        UI.Sidebar.Visible = not App.IsMinimized
-        UI.ContentContainer.Visible = not App.IsMinimized
-        if UI.ResizeHandle then
-            UI.ResizeHandle.Visible = not App.IsMinimized
-        end
-        UI.MinimizeBtn.Text = App.IsMinimized and "□" or "—"
-
-        local targetWidth = App.IsMinimized and getTitleFittedMinWidth() or App.ExpandedWidth
-        local targetHeight = App.IsMinimized and 54 or App.ExpandedHeight
-        if not App.IsMinimized then
-            applyResponsiveLayout(targetWidth)
-        end
-
-        Utils.Tween(UI.MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, targetWidth, 0, targetHeight)
-        })
-    end)
-
-    Utils.Track(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
-            togglePanelVisibility()
-        end
-    end))
-
-    Utils.Track(UserInputService.JumpRequest:Connect(function()
-        if State.InfiniteJumpEnabled then
-            local _, hum = Utils.GetCharacter()
-            if hum then
-                hum:ChangeState(Enum.HumanoidStateType.Jumping)
-            end
-        end
-    end))
-
-    local function onCharacterAdded(char)
-        table.clear(Physics.NoclipCache)
-        State.IsTeleportLocking = false
-        Emotes.Playing = false
-        Emotes.ActiveTrack = nil
-        Physics.CleanupFly()
-
-        local hum = char:WaitForChild("Humanoid", 10)
-        if hum then
-            if State.WalkSpeed ~= 16 then hum.WalkSpeed = State.WalkSpeed end
-            if State.JumpPower ~= 50 then
-                hum.UseJumpPower = true
-                hum.JumpPower = State.JumpPower
-            end
-        end
-    end
-
-    if LocalPlayer.Character then
-        task.spawn(onCharacterAdded, LocalPlayer.Character)
-    end
-    Utils.Track(LocalPlayer.CharacterAdded:Connect(onCharacterAdded))
-
-    Utils.Track(Players.PlayerRemoving:Connect(function(plr)
-        ESP.RemovePlayer(plr)
-        ESP.RandomColorMap[plr.UserId] = nil
-    end))
-
-    -- Stepped Loop: Noclip, Carry Alignment, Melee Immunity, & Auto Parry
-    Utils.Track(RunService.Stepped:Connect(function()
-        SafeEngine.Run("SteppedLoop", function()
-            if State.NoclipEnabled then
-                local char = Utils.GetCharacter()
-                if char then
-                    for _, part in ipairs(char:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            if Physics.NoclipCache[part] == nil then
-                                Physics.NoclipCache[part] = part.CanCollide
-                            end
-                            if part.CanCollide then
-                                part.CanCollide = false
-                            end
+    for _, plr in ipairs(Services.Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            if not (State.AimbotTeamCheck and IsSameTeam(plr)) then
+                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                local part = plr.Character:FindFirstChild(State.AimbotTargetPart) or plr.Character:FindFirstChild("Head")
+                if hum and hum.Health > 0 and part then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mouseLoc).Magnitude
+                        if dist < shortestDist and IsTargetVisible(part, plr.Character) then
+                            shortestDist = dist
+                            bestPart = part
                         end
                     end
                 end
             end
+        end
+    end
+    return bestPart
+end
 
-            if Carry.Enabled then
-                Carry.Step()
-            end
+-- ----------------------------------------------------------------------------
+-- TAB 4: VISUALS (ESP SUITE: BOX, NAME, HEALTH BAR, TRACERS, 3D CHAMS)
+-- ----------------------------------------------------------------------------
+local SecESP = UIControls.CreateSection(PageVisuals, "SecESP", 1)
+UIControls.CreateToggle(SecESP, "EnableESP", "ESPEnabled", 1)
+UIControls.CreateToggle(SecESP, "BoxESP", "ESPBox", 2)
+UIControls.CreateToggle(SecESP, "NameESP", "ESPName", 3)
+UIControls.CreateToggle(SecESP, "HealthESP", "ESPHealth", 4)
+UIControls.CreateToggle(SecESP, "TracerESP", "ESPTracers", 5)
+UIControls.CreateToggle(SecESP, "ChamsESP", "ESPChams", 6)
+UIControls.CreateToggle(SecESP, "TeamCheck", "ESPTeamCheck", 7)
+UIControls.CreateSlider(SecESP, "ESPDist", "ESPMaxDistance", 250, 10000, 0, 8)
 
-            if Combat.MeleeImmunity then
-                Protection.StepMeleeImmunity()
-            end
+local ESPRegistry = {}
 
-            if Combat.AutoParryEnabled then
-                Combat.StepAutoParry()
-            end
+local function RemovePlayerESP(plr)
+    local entry = ESPRegistry[plr]
+    if not entry then return end
+    pcall(function()
+        if entry.Box then entry.Box:Remove() end
+        if entry.Name then entry.Name:Remove() end
+        if entry.HealthBg then entry.HealthBg:Remove() end
+        if entry.HealthBar then entry.HealthBar:Remove() end
+        if entry.Tracer then entry.Tracer:Remove() end
+        if entry.Highlight and entry.Highlight.Parent then entry.Highlight:Destroy() end
+    end)
+    ESPRegistry[plr] = nil
+end
+
+local function EnsurePlayerESP(plr)
+    if ESPRegistry[plr] then
+        return ESPRegistry[plr]
+    end
+    local entry = {}
+    if Env.HasDrawing then
+        pcall(function()
+            local box = Drawing.new("Square")
+            box.Thickness = 1.4
+            box.Filled = false
+            box.Color = ActiveTheme.Accent
+            box.Visible = false
+            entry.Box = box
+
+            local nameTxt = Drawing.new("Text")
+            nameTxt.Size = 13
+            nameTxt.Center = true
+            nameTxt.Outline = true
+            nameTxt.Color = Color3.fromRGB(255, 255, 255)
+            nameTxt.Visible = false
+            entry.Name = nameTxt
+
+            local hpBg = Drawing.new("Line")
+            hpBg.Thickness = 4
+            hpBg.Color = Color3.fromRGB(15, 15, 20)
+            hpBg.Visible = false
+            entry.HealthBg = hpBg
+
+            local hpBar = Drawing.new("Line")
+            hpBar.Thickness = 2.4
+            hpBar.Color = Color3.fromRGB(34, 197, 94)
+            hpBar.Visible = false
+            entry.HealthBar = hpBar
+
+            local tracer = Drawing.new("Line")
+            tracer.Thickness = 1.2
+            tracer.Color = ActiveTheme.Accent
+            tracer.Visible = false
+            entry.Tracer = tracer
         end)
-    end))
+    end
+    ESPRegistry[plr] = entry
+    return entry
+end
 
-    -- Unified RenderStepped Loop: Smooth Admin Fly, Aimbot + RGB Gun Laser, Animasi Labu 3D, & Throttled Telemetry/ESP
-    local frameCount = 0
-    local lastTick = os.clock()
-    local lastWorldScan = 0
+CleanupManager:AddConnection(Services.Players.PlayerRemoving:Connect(function(plr)
+    RemovePlayerESP(plr)
+end))
 
-    Utils.Track(RunService.RenderStepped:Connect(function(dt)
-        local tNow = os.clock()
+CleanupManager:OnUnload(function()
+    for plr, _ in pairs(ESPRegistry) do
+        RemovePlayerESP(plr)
+    end
+end)
 
-        SafeEngine.Run("RenderSteppedLoop", function()
-            -- 1. Animasi Hidup pada Logo Labu 3D (Lewati labu menu jika panel disembunyikan)
-            local pulse = (math.sin(tNow * 3.4) + 1) * 0.5
-            local eyeGlow = Color3.fromRGB(255, math.floor(195 + pulse * 60), math.floor(55 + pulse * 95))
-            for _, pData in ipairs(UI.Pumpkins) do
-                if (App.IsOpen or not pData.IsMenuPumpkin) and pData.Holder and pData.Holder.Parent then
-                    pData.EyeLeft.BackgroundColor3 = eyeGlow
-                    pData.EyeRight.BackgroundColor3 = eyeGlow
-                    pData.Mouth.BackgroundColor3 = eyeGlow
-                    if pData.IsHero then
-                        pData.Aura.BackgroundTransparency = 0.62 + (1 - pulse) * 0.18
-                        pData.Holder.Rotation = math.sin(tNow * 2.2) * 5.5
-                    end
-                end
+-- ----------------------------------------------------------------------------
+-- TAB 5: TELEPORTATION (PLAYER TP, SPECTATE, SAVED WAYPOINTS, CTRL+CLICK TP)
+-- ----------------------------------------------------------------------------
+local SecTPPlayer = UIControls.CreateSection(PageTeleport, "SecTPPlayer", 1)
+local SelectedTPTarget = ""
+local SpectatingPlayer = false
+
+local function GetOtherPlayerNames()
+    local list = {}
+    for _, plr in ipairs(Services.Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            table.insert(list, plr.Name)
+        end
+    end
+    if #list == 0 then
+        table.insert(list, "No Other Players")
+    end
+    if SelectedTPTarget == "" or SelectedTPTarget == "No Other Players" then
+        SelectedTPTarget = list[1]
+    end
+    return list
+end
+
+local PlayerDropdownUI = UIControls.CreateDropdown(SecTPPlayer, "Select Player", GetOtherPlayerNames(), function()
+    return SelectedTPTarget
+end, 1, function(opt)
+    SelectedTPTarget = opt
+end)
+
+UIControls.CreateButton(SecTPPlayer, "RefreshPlayers", nil, 2, function()
+    local names = GetOtherPlayerNames()
+    PlayerDropdownUI.Rebuild(names)
+    PlayerDropdownUI.RefreshLabel()
+    Notify("Teleport", "Player list refreshed (" .. tostring(#names) .. ")", 2)
+end)
+
+UIControls.CreateButton(SecTPPlayer, "TPToPlayer", nil, 3, function()
+    local target = Services.Players:FindFirstChild(SelectedTPTarget)
+    local targetHRP = target and target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if targetHRP and myHRP then
+        myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 2, 3)
+        Notify("Teleport", "Teleported to " .. target.Name, 2.5)
+    else
+        Notify("Teleport", "Target player character not found", 2.5)
+    end
+end)
+
+UIControls.CreateButton(SecTPPlayer, "SpectatePlayer", Color3.fromRGB(30, 58, 138), 4, function()
+    SpectatingPlayer = not SpectatingPlayer
+    if SpectatingPlayer then
+        local target = Services.Players:FindFirstChild(SelectedTPTarget)
+        local targetHum = target and target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+        if targetHum then
+            Camera.CameraSubject = targetHum
+            Notify("Spectate", "Watching " .. target.Name .. " (Click again to stop)", 3)
+        else
+            SpectatingPlayer = false
+        end
+    else
+        local myHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if myHum then
+            Camera.CameraSubject = myHum
+        end
+        Notify("Spectate", "Returned camera to your character", 2)
+    end
+end)
+
+local SecTPWaypoints = UIControls.CreateSection(PageTeleport, "SecTPWaypoints", 2)
+local SavedWaypointCFrame = nil
+
+UIControls.CreateButton(SecTPWaypoints, "SaveWaypoint", nil, 1, function()
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if myHRP then
+        SavedWaypointCFrame = myHRP.CFrame
+        local pos = myHRP.Position
+        Notify("Waypoint Saved", string.format("X: %.1f, Y: %.1f, Z: %.1f", pos.X, pos.Y, pos.Z), 2.5)
+    end
+end)
+
+UIControls.CreateButton(SecTPWaypoints, "LoadWaypoint", nil, 2, function()
+    local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if SavedWaypointCFrame and myHRP then
+        myHRP.CFrame = SavedWaypointCFrame
+        Notify("Waypoint", "Teleported to saved coordinates", 2.5)
+    else
+        Notify("Waypoint", "No saved waypoint found yet", 2.5)
+    end
+end)
+
+UIControls.CreateToggle(SecTPWaypoints, "CtrlClickTP", "CtrlClickTP", 3)
+
+-- Ctrl + Left-Click Teleport Handler
+CleanupManager:AddConnection(Services.UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed or not CleanupManager.Alive or not State.CtrlClickTP then
+        return
+    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local ctrlDown = Services.UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+            or Services.UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+        if ctrlDown then
+            local mouse = LocalPlayer:GetMouse()
+            local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if mouse and mouse.Hit and myHRP then
+                myHRP.CFrame = CFrame.new(mouse.Hit.Position + Vector3.new(0, 3.2, 0))
             end
+        end
+    end
+end))
 
-            -- 2. Smooth Admin Flight Loop
-            Physics.StepSmoothFly(dt)
+-- ----------------------------------------------------------------------------
+-- TAB 6: SETTINGS (16 LANGUAGES, LIVE IP/GEO CARD, THEME, JSON CONFIG, UNLOAD)
+-- ----------------------------------------------------------------------------
+local SecLangGeo = UIControls.CreateSection(PageSettings, "SecLangGeo", 1)
 
-            -- 3. Auto Aimbot & Conditional RGB Weapon Laser
-            local cam = workspace.CurrentCamera
-            if Combat.AimbotEnabled and cam then
-                local tool, isGun = Combat.GetEquippedRangedWeapon()
-                local shouldLock = false
+-- Live Geolocation & IP Card inside Settings
+local GeoDetailCard = Utils.Create("Frame", {
+    Size = UDim2.new(1, 0, 0, 68),
+    BackgroundColor3 = ActiveTheme.BgCard,
+    BorderSizePixel = 0,
+    LayoutOrder = 1,
+    Parent = SecLangGeo
+})
+Utils.Corner(GeoDetailCard, 8)
+Utils.Stroke(GeoDetailCard, ActiveTheme.Accent, 1, 0.45)
 
-                if Combat.AimbotMode == "Always" then
-                    shouldLock = true
-                elseif Combat.AimbotMode == "HoldRMB" then
-                    shouldLock = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-                else
-                    local isClicking = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-                        or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-                    shouldLock = (tool ~= nil) or isClicking
-                end
+local GeoCardTitle = Utils.Create("TextLabel", {
+    Size = UDim2.new(1, -20, 0, 20),
+    Position = UDim2.new(0, 10, 0, 6),
+    BackgroundTransparency = 1,
+    Text = "🌐 Real-Time Geolocation & IP Telemetry",
+    TextColor3 = ActiveTheme.AccentAlt,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = GeoDetailCard
+})
 
-                if shouldLock then
-                    local targetPlr, aimPart = Combat.FindBestTarget()
-                    Combat.CurrentTarget = targetPlr
-                    if targetPlr and aimPart and (aimPart.Position - cam.CFrame.Position).Magnitude > 0.05 then
-                        local desiredCF = CFrame.lookAt(cam.CFrame.Position, aimPart.Position)
-                        if desiredCF == desiredCF then
-                            cam.CFrame = cam.CFrame:Lerp(desiredCF, math.clamp(Combat.Smoothness, 0.08, 1))
+local GeoCardLine1 = Utils.Create("TextLabel", {
+    Size = UDim2.new(1, -20, 0, 18),
+    Position = UDim2.new(0, 10, 0, 27),
+    BackgroundTransparency = 1,
+    Text = "IP: Detecting... | Region: Syncing...",
+    TextColor3 = ActiveTheme.TextPrimary,
+    TextSize = 11,
+    Font = Enum.Font.GothamSemibold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = GeoDetailCard
+})
+
+local GeoCardLine2 = Utils.Create("TextLabel", {
+    Size = UDim2.new(1, -20, 0, 16),
+    Position = UDim2.new(0, 10, 0, 46),
+    BackgroundTransparency = 1,
+    Text = "ISP: Detecting... | Active Language: EN",
+    TextColor3 = ActiveTheme.TextMuted,
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    Parent = GeoDetailCard
+})
+
+local function UpdateGeoUI()
+    local g = GeoLangAPI.GeoData
+    local maskedIP = GeoLangAPI:FormatIPDisplay()
+    local locText = string.format("%s, %s (%s)", g.City, g.Country, g.CountryCode)
+    GeoHeaderLabel.Text = string.format("%s • %s", g.CountryCode, maskedIP)
+    GeoCardLine1.Text = string.format("IP: %s  |  Location: %s", maskedIP, locText)
+    GeoCardLine2.Text = string.format("ISP: %s  |  Active Lang: %s", g.ISP, GeoLangAPI.CurrentLang:upper())
+end
+
+table.insert(GeoLangAPI.OnGeoUpdated, UpdateGeoUI)
+
+-- 16-Language Selector Dropdown
+local LangDropdownUI = UIControls.CreateDropdown(
+    SecLangGeo,
+    "SelectLanguage",
+    GeoLangAPI.LanguageNames,
+    function()
+        for _, item in ipairs(GeoLangAPI.LanguageNames) do
+            if item.Code == State.Language then
+                return item.Label
+            end
+        end
+        return GeoLangAPI.CurrentLang:upper()
+    end,
+    2,
+    function(opt)
+        State.Language = opt.Code
+        GeoLangAPI:SetLanguage(opt.Code)
+        UpdateGeoUI()
+        Notify("Language Updated", "Active language: " .. opt.Label, 2.5)
+    end
+)
+
+UIControls.CreateButton(SecLangGeo, "AutoDetectLang", nil, 3, function()
+    State.Language = "auto"
+    GeoLangAPI:SetLanguage("auto")
+    LangDropdownUI.RefreshLabel()
+    UpdateGeoUI()
+    Notify("GeoLangAPI", "Language synced to region (" .. GeoLangAPI.CurrentLang:upper() .. ")", 2.5)
+end)
+
+UIControls.CreateToggle(SecLangGeo, "MaskIPToggle", "MaskIP", 4, function()
+    UpdateGeoUI()
+end)
+
+UIControls.CreateButton(SecLangGeo, "RefreshGeo", nil, 5, function()
+    GeoLangAPI:FetchAsync()
+    Notify("GeoLangAPI", "Refreshing real-time IP & location...", 2)
+end)
+
+-- Theme & Config Persistence Section
+local SecTheme = UIControls.CreateSection(PageSettings, "SecTheme", 2)
+
+local function ApplyThemePreset(presetName)
+    local t = Themes[presetName]
+    if not t then return end
+    ActiveTheme = t
+    State.AccentPreset = presetName
+
+    MainWindow.BackgroundColor3 = t.BgPrimary
+    MainStroke.Color = t.Accent
+    TopBar.BackgroundColor3 = t.BgSecondary
+    Sidebar.BackgroundColor3 = t.BgSecondary
+    SkullVisual.Stroke.Color = t.Accent
+    SkullVisual.EyeLeft.Color = t.Accent
+    SkullVisual.EyeRight.Color = t.Accent
+    SkullVisual.Crown.Color = t.Accent
+    VersionBadge.BackgroundColor3 = t.BgCard
+    VersionStroke.Color = t.Accent
+    VersionLabel.TextColor3 = t.Accent
+    RestorePill.BackgroundColor3 = t.BgSecondary
+    RestorePill.TextColor3 = t.Accent
+
+    if FOVCircleDrawing then
+        pcall(function() FOVCircleDrawing.Color = t.Accent end)
+    end
+    if ActiveTabName then
+        SelectTab(ActiveTabName)
+    end
+end
+
+UIControls.CreateDropdown(
+    SecTheme,
+    "3D Skull Theme",
+    { "RoyalGold", "CrimsonSkull", "CyberCyan", "EmeraldVenom", "PhantomViolet" },
+    function()
+        return State.AccentPreset
+    end,
+    1,
+    function(opt)
+        ApplyThemePreset(opt)
+        Notify("Theme Updated", "Applied luxury theme: " .. opt, 2)
+    end
+)
+
+UIControls.CreateSlider(SecTheme, "Window Transparency", "WindowOpacity", 0, 0.45, 2, 2, function(val)
+    MainWindow.BackgroundTransparency = val
+end)
+
+UIControls.CreateButton(SecTheme, "SaveConfig", nil, 3, function()
+    local ok, err = ConfigManager:Save()
+    if ok then
+        Notify("Config Saved", "Saved to " .. ConfigManager.FilePath, 2.5)
+    else
+        Notify("Config Info", tostring(err or "Saved in session memory"), 2.5)
+    end
+end)
+
+UIControls.CreateButton(SecTheme, "LoadConfig", nil, 4, function()
+    if ConfigManager:Load() then
+        ApplyThemePreset(State.AccentPreset)
+        MainWindow.BackgroundTransparency = State.WindowOpacity
+        GeoLangAPI:SetLanguage(State.Language)
+        UpdateGeoUI()
+        Notify("Config Loaded", "Configuration restored from JSON", 2.5)
+    else
+        Notify("Config", "No saved JSON config found", 2.5)
+    end
+end)
+
+UIControls.CreateButton(SecTheme, "ResetConfig", Color3.fromRGB(71, 85, 105), 5, function()
+    ConfigManager:Reset()
+    ApplyThemePreset(State.AccentPreset)
+    MainWindow.BackgroundTransparency = State.WindowOpacity
+    GeoLangAPI:SetLanguage("auto")
+    UpdateGeoUI()
+    Notify("Config Reset", "All settings restored to factory defaults", 2.5)
+end)
+
+-- System Lifecycle & Full Unload Button
+local SecSystem = UIControls.CreateSection(PageSettings, "SecSystem", 3)
+UIControls.CreateButton(SecSystem, "UnloadHub", Color3.fromRGB(185, 28, 28), 1, function()
+    CleanupManager:Unload()
+end)
+
+-- Toggle GUI visibility via RightShift keybind
+CleanupManager:AddConnection(Services.UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed or not CleanupManager.Alive then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        local newState = not MainWindow.Visible
+        MainWindow.Visible = newState
+        RestorePill.Visible = not newState
+    end
+end))
+
+-- ============================================================================
+-- 8. OPTIMIZED RENDER & PHYSICS LOOPS (SKULL 3D, BADGE SHIMMER, GEO, COMBAT, ESP)
+-- ============================================================================
+local RenderClock = 0
+local LastSafePosition = nil
+
+-- RenderStepped Loop: 3D Skull Animation, Verified Badge Shimmer, Geo Pulse, Aimbot, ESP
+CleanupManager:AddConnection(Services.RunService.RenderStepped:Connect(function(dt)
+    if not CleanupManager.Alive then return end
+    RenderClock = RenderClock + dt
+
+    -- 1. Luxury 3D HD Skull Smooth Orbital & Levitation Render Loop
+    if MainWindow.Visible and SkullVisual and SkullVisual.Rig then
+        local yaw = math.sin(RenderClock * 1.45) * 0.42
+        local pitch = math.cos(RenderClock * 1.1) * 0.12
+        local bobY = math.sin(RenderClock * 2.2) * 0.06
+        local rotCF = CFrame.new(0, bobY, 0) * CFrame.Angles(pitch, yaw, 0)
+
+        for part, baseCF in pairs(SkullVisual.BaseParts) do
+            if part and part.Parent then
+                part.CFrame = rotCF * baseCF
+            end
+        end
+
+        -- Subtle eye socket pulse
+        local pulse = 0.72 + 0.28 * math.sin(RenderClock * 3.4)
+        SkullVisual.EyeLeft.Color = ActiveTheme.Accent:Lerp(ActiveTheme.AccentAlt, pulse)
+        SkullVisual.EyeRight.Color = ActiveTheme.Accent:Lerp(ActiveTheme.AccentAlt, pulse)
+    end
+
+    -- 2. Animated Blue Verified Badge Specular Shimmer & Geo Status Pulse
+    if MainWindow.Visible and VerifiedVisual and VerifiedVisual.Shimmer then
+        local sweep = ((RenderClock * 0.75) % 2) - 1
+        VerifiedVisual.Shimmer.Offset = Vector2.new(sweep, 0)
+
+        local status = GeoLangAPI.GeoData.Status
+        if status == "Live" then
+            local alpha = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(RenderClock * 4))
+            GeoPulseDot.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+            GeoPulseDot.BackgroundTransparency = alpha
+        elseif status == "Syncing" then
+            GeoPulseDot.BackgroundColor3 = Color3.fromRGB(250, 204, 21)
+            GeoPulseDot.BackgroundTransparency = 0.1
+        else
+            GeoPulseDot.BackgroundColor3 = Color3.fromRGB(248, 113, 113)
+            GeoPulseDot.BackgroundTransparency = 0.15
+        end
+    end
+
+    -- 3. Aimbot FOV Circle & Smooth Camera Lock
+    local mouseLoc = Services.UserInputService:GetMouseLocation()
+    if FOVCircleDrawing then
+        FOVCircleDrawing.Position = mouseLoc
+        FOVCircleDrawing.Radius = State.AimbotFOV
+        FOVCircleDrawing.Visible = (State.AimbotEnabled and State.AimbotFOVVisible)
+    end
+
+    if State.AimbotEnabled and Services.UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local targetPart = GetClosestAimbotTarget()
+        if targetPart then
+            local goalCF = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+            local alpha = math.clamp(State.AimbotSmoothness, 0.02, 1)
+            Camera.CFrame = Camera.CFrame:Lerp(goalCF, alpha)
+        end
+    end
+
+    -- 4. ESP Rendering Loop
+    for _, plr in ipairs(Services.Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            local char = plr.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local head = char and char:FindFirstChild("Head")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+            local shouldShow = State.ESPEnabled
+                and char ~= nil
+                and hrp ~= nil
+                and hum ~= nil
+                and hum.Health > 0
+                and not (State.ESPTeamCheck and IsSameTeam(plr))
+
+            if shouldShow then
+                local dist = (hrp.Position - Camera.CFrame.Position).Magnitude
+                if dist <= State.ESPMaxDistance then
+                    local entry = EnsurePlayerESP(plr)
+
+                    -- 3D Highlight Chams
+                    if State.ESPChams then
+                        if not entry.Highlight or not entry.Highlight.Parent then
+                            local hl = Instance.new("Highlight")
+                            hl.Name = "BimSakSin_Chams"
+                            hl.FillColor = ActiveTheme.Accent
+                            hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+                            hl.FillTransparency = 0.65
+                            hl.OutlineTransparency = 0.15
+                            hl.Adornee = char
+                            hl.Parent = char
+                            entry.Highlight = hl
+                        end
+                    elseif entry.Highlight then
+                        pcall(function() entry.Highlight:Destroy() end)
+                        entry.Highlight = nil
+                    end
+
+                    -- 2D Screen Projections
+                    local rootPos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                    if onScreen and Env.HasDrawing then
+                        local topPos = Camera:WorldToViewportPoint((head and head.Position or hrp.Position) + Vector3.new(0, 1.1, 0))
+                        local botPos = Camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 2.6, 0))
+                        local boxH = math.max(math.abs(botPos.Y - topPos.Y), 14)
+                        local boxW = boxH * 0.58
+                        local boxX = rootPos.X - boxW * 0.5
+                        local boxY = topPos.Y
+
+                        if entry.Box then
+                            entry.Box.Visible = State.ESPBox
+                            entry.Box.Size = Vector2.new(boxW, boxH)
+                            entry.Box.Position = Vector2.new(boxX, boxY)
+                            entry.Box.Color = ActiveTheme.Accent
                         end
 
-                        if Combat.RGBLaserEnabled and isGun and tool then
-                            local handle = tool:FindFirstChild("Handle") or tool:FindFirstChildWhichIsA("BasePart")
-                            if handle then
-                                Combat.UpdateLaser(handle.Position, aimPart.Position)
-                            else
-                                Combat.HideLaser()
-                            end
-                        else
-                            Combat.HideLaser()
+                        if entry.Name then
+                            entry.Name.Visible = State.ESPName
+                            entry.Name.Position = Vector2.new(rootPos.X, boxY - 16)
+                            entry.Name.Text = string.format("%s [%.0fm]", plr.DisplayName, dist)
+                        end
+
+                        if entry.HealthBg and entry.HealthBar then
+                            local hpRatio = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+                            local barX = boxX - 5
+                            entry.HealthBg.Visible = State.ESPHealth
+                            entry.HealthBg.From = Vector2.new(barX, boxY + boxH)
+                            entry.HealthBg.To = Vector2.new(barX, boxY)
+
+                            entry.HealthBar.Visible = State.ESPHealth
+                            entry.HealthBar.From = Vector2.new(barX, boxY + boxH)
+                            entry.HealthBar.To = Vector2.new(barX, boxY + boxH - (boxH * hpRatio))
+                            entry.HealthBar.Color = Color3.fromRGB(239, 68, 68):Lerp(Color3.fromRGB(34, 197, 94), hpRatio)
+                        end
+
+                        if entry.Tracer then
+                            entry.Tracer.Visible = State.ESPTracers
+                            entry.Tracer.From = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y)
+                            entry.Tracer.To = Vector2.new(rootPos.X, botPos.Y)
+                            entry.Tracer.Color = ActiveTheme.Accent
                         end
                     else
-                        Combat.HideLaser()
+                        if entry.Box then entry.Box.Visible = false end
+                        if entry.Name then entry.Name.Visible = false end
+                        if entry.HealthBg then entry.HealthBg.Visible = false end
+                        if entry.HealthBar then entry.HealthBar.Visible = false end
+                        if entry.Tracer then entry.Tracer.Visible = false end
                     end
                 else
-                    Combat.CurrentTarget = nil
-                    Combat.HideLaser()
+                    RemovePlayerESP(plr)
                 end
             else
-                Combat.HideLaser()
+                RemovePlayerESP(plr)
             end
-        end)
-
-        -- 4. Throttled Telemetry, Persistence & ESP Updater (~6 Hz)
-        frameCount = frameCount + 1
-        local elapsed = tNow - lastTick
-        if elapsed >= 0.16 then
-            local fps = math.floor((frameCount / elapsed) + 0.5)
-            frameCount = 0
-            lastTick = tNow
-
-            SafeEngine.Run("TelemetryAndESP", function()
-                if UI.TelemetryLabels.FPS then
-                    UI.TelemetryLabels.FPS.Text = tostring(fps) .. " FPS"
-                end
-
-                local pingOk, pingVal = pcall(function()
-                    return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-                end)
-                if UI.TelemetryLabels.Ping then
-                    UI.TelemetryLabels.Ping.Text = pingOk and (tostring(math.floor(pingVal + 0.5)) .. " ms") or "N/A"
-                end
-
-                local memOk, memVal = pcall(function()
-                    return Stats:GetTotalMemoryUsageMb()
-                end)
-                if UI.TelemetryLabels.Memory then
-                    UI.TelemetryLabels.Memory.Text = memOk and (string.format("%.1f MB", memVal)) or "N/A"
-                end
-
-                if UI.TelemetryLabels.Players then
-                    UI.TelemetryLabels.Players.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
-                end
-
-                local _, hum, root = Utils.GetCharacter()
-                if UI.TelemetryLabels.Coords then
-                    if root then
-                        local p = root.Position
-                        UI.TelemetryLabels.Coords.Text = string.format("XYZ: %.1f, %.1f, %.1f", p.X, p.Y, p.Z)
-                    else
-                        UI.TelemetryLabels.Coords.Text = "XYZ: Menunggu karakter..."
-                    end
-                end
-
-                if hum then
-                    if State.WalkSpeed ~= 16 and hum.WalkSpeed ~= State.WalkSpeed then
-                        hum.WalkSpeed = State.WalkSpeed
-                    end
-                    if State.JumpPower ~= 50 then
-                        hum.UseJumpPower = true
-                        if hum.JumpPower ~= State.JumpPower then
-                            hum.JumpPower = State.JumpPower
-                        end
-                    end
-                end
-
-                if workspace.CurrentCamera and State.CameraFOV ~= 70 and workspace.CurrentCamera.FieldOfView ~= State.CameraFOV then
-                    workspace.CurrentCamera.FieldOfView = State.CameraFOV
-                end
-
-                if State.FullbrightEnabled then
-                    Lighting.Brightness = 2
-                    Lighting.GlobalShadows = false
-                    Lighting.Ambient = Color3.fromRGB(178, 178, 178)
-                    Lighting.OutdoorAmbient = Color3.fromRGB(178, 178, 178)
-                end
-
-                if State.NoFogEnabled then
-                    Lighting.FogEnd = 100000
-                    local atmo = Lighting:FindFirstChildOfClass("Atmosphere")
-                    if atmo and atmo.Density ~= 0 then
-                        atmo.Density = 0
-                    end
-                end
-
-                ESP.UpdateAll()
-
-                if Combat.HungerThirstGuard then
-                    Protection.StepHungerThirstGuard()
-                end
-
-                if (tNow - lastWorldScan) >= 0.5 then
-                    lastWorldScan = tNow
-                    ItemESP.ScanAndRender()
-                    GeneratorESP.ScanAndRender()
-                end
-            end)
         end
-    end))
-end
+    end
+end))
 
--- Inisialisasi Tab Awal & Notifikasi Selamat Datang
-Components.SwitchTab("Dashboard")
-Utils.Notify(App.Name, "Semoga hari-hari kalian menyenangkan! 🎃", Theme.Accent)
+-- Heartbeat Loop: Unlimited Movement Physics, 6-DOF Fly, Noclip & Character Defense
+CleanupManager:AddConnection(Services.RunService.Heartbeat:Connect(function()
+    if not CleanupManager.Alive then return end
+
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not hrp then return end
+
+    -- 1. Enforce Unlimited WalkSpeed & JumpPower
+    if State.WalkSpeedEnabled and hum.WalkSpeed ~= State.WalkSpeedValue then
+        hum.WalkSpeed = State.WalkSpeedValue
+    end
+    if State.JumpPowerEnabled then
+        hum.UseJumpPower = true
+        if hum.JumpPower ~= State.JumpPowerValue then
+            hum.JumpPower = State.JumpPowerValue
+        end
+    end
+
+    -- 2. Smooth 6-DOF Fly Velocity & Camera Orientation
+    if State.FlyEnabled then
+        if not FlyController.Active or not FlyController.BodyVel or not FlyController.BodyVel.Parent then
+            FlyController:Start()
+        end
+        if FlyController.BodyGyro and FlyController.BodyVel then
+            local moveDir = Vector3.zero
+            local camCF = Camera.CFrame
+            if Services.UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDir = moveDir + camCF.LookVector
+            end
+            if Services.UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDir = moveDir - camCF.LookVector
+            end
+            if Services.UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDir = moveDir - camCF.RightVector
+            end
+            if Services.UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDir = moveDir + camCF.RightVector
+            end
+            if Services.UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                moveDir = moveDir + Vector3.new(0, 1, 0)
+            end
+            if Services.UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                moveDir = moveDir - Vector3.new(0, 1, 0)
+            end
+
+            if moveDir.Magnitude > 0 then
+                moveDir = moveDir.Unit * State.FlySpeedValue
+            end
+
+            FlyController.BodyGyro.CFrame = camCF
+            FlyController.BodyVel.Velocity = moveDir
+        end
+    elseif FlyController.Active then
+        FlyController:Stop()
+    end
+
+    -- 3. Noclip Collision Bypass
+    if State.NoclipEnabled then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.CanCollide then
+                part.CanCollide = false
+            end
+        end
+    end
+
+    -- 4. Character Defense Suite
+    if State.AntiRagdoll then
+        if hum:GetState() == Enum.HumanoidStateType.Ragdoll or hum:GetState() == Enum.HumanoidStateType.FallingDown then
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+        if not State.FlyEnabled then
+            hum.PlatformStand = false
+        end
+    end
+
+    if State.AntiFling then
+        if hrp.AssemblyAngularVelocity.Magnitude > 50 then
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+        if not State.FlyEnabled and hrp.AssemblyLinearVelocity.Magnitude > math.max(State.WalkSpeedValue * 2.5, 220) then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+        end
+    end
+
+    if State.AntiVoid then
+        if hrp.Position.Y > -35 then
+            LastSafePosition = hrp.CFrame
+        elseif LastSafePosition then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = LastSafePosition + Vector3.new(0, 6, 0)
+        end
+    end
+
+    if State.AutoHeal and hum.Health > 0 and hum.Health < hum.MaxHealth then
+        hum.Health = hum.MaxHealth
+    end
+end))
+
+-- Re-bind Fly & Physics on Character Respawn
+CleanupManager:AddConnection(LocalPlayer.CharacterAdded:Connect(function()
+    if not CleanupManager.Alive then return end
+    task.wait(0.35)
+    if State.FlyEnabled then
+        FlyController:Start()
+    end
+end))
+
+-- ============================================================================
+-- 9. INITIALIZE DEFAULT TAB, LANGUAGE & LIVE GEOLOCATION SYNC
+-- ============================================================================
+SelectTab("Main")
+GeoLangAPI:SetLanguage(State.Language)
+GeoLangAPI:FetchAsync()
+Notify("BimSakSin Hub v3.0", "3D HD Skull Edition loaded • Press RightShift to toggle", 4)
