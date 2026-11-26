@@ -13,9 +13,6 @@
 - Precision Auto Aimbot + Conditional RGB Weapon Laser + Auto Parry
 - Melee Immunity + Disaster & Total Hazard Immunity + Hunger & Thirst Guard
 - Interactive Replicated Carry System (Visible to Other Players + Carry/Lepas Buttons)
-- Integrated Anti-Detect & Stealth Engine (GUI Cloaking, Instance Name Randomizer,
-      Metamethod Property Spoofing, Local Anti-Kick, Anti-Cheat Remote Guard,
-      Anti-Detect Fly & Anti-Detect Teleport Bypass)
 - Interactive Replicated R6 & R15 Dance/Emote Studio (Visible on All Devices)
 - Zero-Rubberband Universal Safe Teleport ("Click") & Waypoint Manager
 - Smooth Admin-Style Free-Flight & Analog-Safe NoClip Geometry Inspector
@@ -43,14 +40,6 @@ do
         ["BSS_ItemESP_Folder"] = true,
         ["BSS_GenESP_Folder"] = true,
     }
-    if typeof(getgenv) == "function" and type(getgenv().BSS_RuntimeNames) == "table" then
-        for dynName, active in pairs(getgenv().BSS_RuntimeNames) do
-            if active and type(dynName) == "string" then
-                existingNames[dynName] = true
-            end
-        end
-        getgenv().BSS_RuntimeNames = {}
-    end
     local function cleanupContainer(container)
         if not container then return end
         pcall(function()
@@ -65,16 +54,7 @@ do
     if typeof(gethui) == "function" then
         cleanupContainer(gethui())
     end
-    local okCoreSvc, coreGuiSvc = pcall(function()
-        return game:GetService("CoreGui")
-    end)
-    if okCoreSvc and coreGuiSvc then
-        cleanupContainer(coreGuiSvc)
-        cleanupContainer(coreGuiSvc:FindFirstChild("RobloxGui"))
-    end
-    if workspace and workspace.CurrentCamera then
-        cleanupContainer(workspace.CurrentCamera)
-    end
+    cleanupContainer(game:GetService("CoreGui"))
 
     local lp = game:GetService("Players").LocalPlayer
     if lp then
@@ -88,14 +68,16 @@ do
                 "BSS_FlyLinearVel",
                 "BSS_FlyAlignOri",
                 "BSS_FlyAttachment",
-                "LinearVelocityConstraint",
-                "AlignOrientationConstraint",
-                "RootRigAttachment_Aux",
                 "BSS_CarryVelocity",
                 "BSS_CarryWeld",
             }) do
                 local old = root:FindFirstChild(objName)
                 if old then old:Destroy() end
+            end
+            for _, child in ipairs(root:GetChildren()) do
+                if child:GetAttribute("_BSS_Stealth") then
+                    child:Destroy()
+                end
             end
         end
         local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -110,6 +92,12 @@ do
 
     local oldViewAnchor = workspace:FindFirstChild("BSS_RemoteViewAnchor")
     if oldViewAnchor then oldViewAnchor:Destroy() end
+
+    for _, child in ipairs(workspace:GetChildren()) do
+        if child:GetAttribute("_BSS_Stealth") then
+            child:Destroy()
+        end
+    end
 end
 
 -- ============================================================================
@@ -137,10 +125,6 @@ pcall(function()
 end)
 
 local LocalPlayer = Players.LocalPlayer
-if not LocalPlayer then
-    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
-    LocalPlayer = Players.LocalPlayer
-end
 
 local App = {
     Name = "BimSakSin Hub v3.0",
@@ -645,22 +629,8 @@ GeoLangAPI.FeatureDictionary = {
         ["Mencegah error pada setiap fitur dan memulihkannya otomatis saat terganggu"] = "Prevent errors across all features and auto-repair if disrupted",
         ["Proteksi Koneksi: Anti-Kick Diam (Anti-AFK)"] = "Connection Protection: Anti-AFK Kick Guard",
         ["Mencegah terputus dari server otomatis saat karakter diam lebih dari 20 menit"] = "Prevent automatic server disconnect when idle for over 20 minutes",
-        ["Sistem Anti-Detect & Stealth Mode (Terpadu)"] = "Unified Anti-Detect & Stealth Mode System",
-        ["Acak Ulang Identitas GUI & Objek (Re-Cloak Now)"] = "Re-Randomize GUI & Object Identity (Re-Cloak Now)",
-        ["Master Anti-Detect & Stealth Mode"] = "Master Anti-Detect & Stealth Mode",
-        ["Aktifkan perlindungan anti-deteksi terpadu (GUI Cloak, Spoof & Anti-Kick)"] = "Enable unified anti-detection protection (GUI Cloak, Spoof & Anti-Kick)",
-        ["GUI Cloaking & Acak Nama Objek (Hidden UI)"] = "GUI Cloaking & Object Name Randomizer (Hidden UI)",
-        ["Sembunyikan UI ke container tersembunyi & acak nama instance agar lolos scan"] = "Hide UI inside stealth container & randomize instance names against scans",
-        ["Spoofing Properti Karakter (Speed / Jump / Gravity)"] = "Character Property Spoofing (Speed / Jump / Gravity)",
-        ["Samarkan WalkSpeed, JumpPower, Gravity & FOV agar terbaca normal oleh game"] = "Mask WalkSpeed, JumpPower, Gravity & FOV to appear default to local scripts",
-        ["Anti-Kick Lokal & Blokir Remote Laporan Anti-Cheat"] = "Local Anti-Kick & Anti-Cheat Report Remote Blocker",
-        ["Tahan panggilan LocalPlayer:Kick() lokal & blokir remote pelaporan mencurigakan"] = "Intercept local LocalPlayer:Kick() calls & block suspicious anti-cheat remotes",
-        ["Physics & Camera Instance Stealth"] = "Physics & Camera Instance Stealth",
-        ["Sembunyikan objek Fly, Laser & Anchor ke CurrentCamera dengan nama bawaan"] = "Hide Fly, Laser & Anchor objects inside CurrentCamera with native names",
-        ["Anti-Detect Fly (CFrame Stealth & State Spoof)"] = "Anti-Detect Fly (CFrame Stealth & State Spoof)",
-        ["Terbang tanpa objek BodyMover/Constraint serta menyamarkan status & kecepatan karakter"] = "Fly without BodyMover/Constraint instances while spoofing character state & velocity",
-        ["Anti-Detect Teleport (Bypass Rubberband & Pos Spoof)"] = "Anti-Detect Teleport (Bypass Rubberband & Pos Spoof)",
-        ["Teleport bertahap anti-rubberband dengan penyamaran kecepatan & pelindung tarik-balik server"] = "Stepped anti-rubberband teleport with velocity spoofing & server setback protection",
+        ["Proteksi Anti-Detect: Fly, Teleport & Semua Fitur"] = "Anti-Detect Protection: Fly, Teleport & All Features",
+        ["Menyamarkan fly, teleport, speed, noclip & semua fitur dari script anti-cheat map"] = "Cloak fly, teleport, speed, noclip & all features from map anti-cheat scripts",
 
         -- Buttons & Chip Selectors
         ["Salin ID Server (Place & Job ID)"] = "Copy Server ID (Place & Job ID)",
@@ -1211,28 +1181,12 @@ local Emotes = {
 local Protection = {
     AntiAFKEnabled = true,
     AntiBugEnabled = true,
+    AntiDetectEnabled = true,
+    AntiDetectBlocks = 0,
     ErrorsCaught = 0,
     AutoRepairs = 0,
     IdleEventsHandled = 0,
     HungerThirstValues = {},
-}
-
-local AntiDetect = {
-    Enabled = true,
-    GuiCloakEnabled = true,
-    PropertySpoofEnabled = true,
-    AntiKickHookEnabled = true,
-    RemoteSanitizerEnabled = true,
-    PhysicsStealthEnabled = true,
-    FlyStealthEnabled = true,
-    TeleportStealthEnabled = true,
-    SpoofedReads = 0,
-    BlockedKicks = 0,
-    BlockedReports = 0,
-    CloakedInstances = 0,
-    HooksInstalled = false,
-    HookSupportLabel = "Standar (Cloak + Stealth)",
-    InstanceNames = {},
 }
 
 local Connections = {}
@@ -1251,6 +1205,7 @@ local UI = {
 local Utils = {}
 local Components = {}
 local SafeEngine = {}
+local AntiDetect = {}
 
 -- ============================================================================
 -- 2. ANTI-BUG & AUTO-RECOVERY ENGINE (SafeEngine)
@@ -1283,10 +1238,7 @@ function SafeEngine.AutoRepair(contextName, errMsg)
             end
         end
         if root and not State.FlyEnabled then
-            for _, name in ipairs({
-                "BSS_FlyLinearVel", "BSS_FlyAlignOri", "BSS_FlyVelocity", "BSS_FlyGyro",
-                "LinearVelocityConstraint", "AlignOrientationConstraint", "RootRigAttachment_Aux"
-            }) do
+            for _, name in ipairs({ "BSS_FlyLinearVel", "BSS_FlyAlignOri", "BSS_FlyVelocity", "BSS_FlyGyro" }) do
                 local inst = root:FindFirstChild(name)
                 if inst then inst:Destroy() end
             end
@@ -1295,714 +1247,274 @@ function SafeEngine.AutoRepair(contextName, errMsg)
             Combat.LaserPart.Transparency = 1
         end
         if UI.StatusLabel and UI.StatusLabel.Parent then
-            UI.StatusLabel.Text = string.format("Anti-Bug Aktif (%d Fix)", Protection.AutoRepairs)
+            if Protection.AntiDetectEnabled then
+                UI.StatusLabel.Text = string.format("Anti-Detect + Bug (%d)", Protection.AutoRepairs)
+            else
+                UI.StatusLabel.Text = string.format("Anti-Bug Aktif (%d Fix)", Protection.AutoRepairs)
+            end
         end
     end)
 end
 
 -- ============================================================================
--- 2B. INTEGRATED ANTI-DETECT & STEALTH ENGINE (AntiDetect)
+-- 2B. UNIVERSAL ANTI-DETECT ENGINE (AntiDetectEngine - Stealth Fly, TP & All)
 -- ============================================================================
 do
-    local namePrefixes = {
-        "RobloxGui_Cache_",
-        "CoreOverlay_",
-        "ViewportLayer_",
-        "StudioWidget_",
-        "InputController_",
-        "CameraRig_",
-        "RenderNode_",
-    }
+    local ourEnv = (typeof(getfenv) == "function") and getfenv(1) or nil
 
-    function AntiDetect.RegisterRuntimeName(name)
-        if type(name) ~= "string" or name == "" then return end
-        if typeof(getgenv) == "function" then
-            local env = getgenv()
-            if type(env.BSS_RuntimeNames) ~= "table" then
-                env.BSS_RuntimeNames = {}
-            end
-            env.BSS_RuntimeNames[name] = true
-        end
-    end
-
-    function AntiDetect.GenerateCrypticName(key)
-        if key and AntiDetect.InstanceNames[key] then
-            return AntiDetect.InstanceNames[key]
-        end
-        local prefix = namePrefixes[(math.abs((key and #key or 0) + math.floor(os.clock() * 1000)) % #namePrefixes) + 1]
-        local hex = ""
-        local okGuid, guid = pcall(function()
-            return HttpService:GenerateGUID(false)
-        end)
-        if okGuid and type(guid) == "string" then
-            hex = string.sub(string.gsub(guid, "-", ""), 1, 10)
-        else
-            hex = string.format("%06x%04x", math.random(0, 0xFFFFFF), math.random(0, 0xFFFF))
-        end
-        local fullName = prefix .. hex
-        if key then
-            AntiDetect.InstanceNames[key] = fullName
-        end
-        AntiDetect.RegisterRuntimeName(fullName)
-        return fullName
-    end
-
-    function AntiDetect.GetStealthName(key, fallbackName)
-        if AntiDetect.Enabled and AntiDetect.GuiCloakEnabled then
-            return AntiDetect.GenerateCrypticName(key)
-        end
-        return fallbackName
-    end
-
-    function AntiDetect.GetFlyInstanceNames()
-        if AntiDetect.Enabled and AntiDetect.PhysicsStealthEnabled then
-            return {
-                Attachment = "RootRigAttachment_Aux",
-                LinearVelocity = "LinearVelocityConstraint",
-                AlignOrientation = "AlignOrientationConstraint",
-            }
-        end
-        return {
-            Attachment = "BSS_FlyAttachment",
-            LinearVelocity = "BSS_FlyLinearVel",
-            AlignOrientation = "BSS_FlyAlignOri",
-        }
-    end
-
-    function AntiDetect.GetStealthGuiParent()
-        if AntiDetect.Enabled and AntiDetect.GuiCloakEnabled then
-            if typeof(gethui) == "function" then
-                local ok, hiddenGui = pcall(gethui)
-                if ok and typeof(hiddenGui) == "Instance" then
-                    return hiddenGui
-                end
-            end
-            local okCore, coreGui = pcall(function()
-                return game:GetService("CoreGui")
-            end)
-            if okCore and coreGui then
-                return coreGui
-            end
-        end
-        local okCore, coreGui = pcall(function()
-            return game:GetService("CoreGui")
-        end)
-        if okCore and coreGui then
-            return coreGui
-        end
-        return LocalPlayer:WaitForChild("PlayerGui")
-    end
-
-    function AntiDetect.GetWorldHelperParent()
-        if AntiDetect.Enabled and AntiDetect.PhysicsStealthEnabled and workspace.CurrentCamera then
-            return workspace.CurrentCamera
-        end
-        return workspace
-    end
-
-    function AntiDetect.ProtectInstance(inst, key, fallbackName)
-        if not inst then return end
-        pcall(function()
-            inst.Archivable = false
-            inst.Name = AntiDetect.GetStealthName(key, fallbackName)
-            if AntiDetect.Enabled and AntiDetect.GuiCloakEnabled then
-                if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" and inst:IsA("GuiBase") then
-                    pcall(syn.protect_gui, inst)
-                elseif typeof(protect_gui) == "function" and inst:IsA("GuiBase") then
-                    pcall(protect_gui, inst)
-                end
-            end
-        end)
-    end
-
-    function AntiDetect.RefreshCloak(regenerateNames)
-        if regenerateNames then
-            table.clear(AntiDetect.InstanceNames)
-        end
-        local cloakedCount = 0
-
-        if UI.ScreenGui and UI.ScreenGui.Parent then
-            local targetParent = AntiDetect.GetStealthGuiParent()
-            pcall(function()
-                if UI.ScreenGui.Parent ~= targetParent then
-                    UI.ScreenGui.Parent = targetParent
-                end
-            end)
-            AntiDetect.ProtectInstance(UI.ScreenGui, "MainScreenGui", App.GuiName)
-            cloakedCount = cloakedCount + 1
+    function AntiDetect.WithStealthSignal(signal, fn)
+        if not Protection.AntiDetectEnabled or not signal or typeof(getconnections) ~= "function" then
+            return fn()
         end
 
-        if ESP.Folder and ESP.Folder.Parent then
-            AntiDetect.ProtectInstance(ESP.Folder, "PlayerESPFolder", "BSS_ESP_Folder")
-            cloakedCount = cloakedCount + 1
-        end
-        if ItemESP.Folder and ItemESP.Folder.Parent then
-            AntiDetect.ProtectInstance(ItemESP.Folder, "ItemESPFolder", "BSS_ItemESP_Folder")
-            cloakedCount = cloakedCount + 1
-        end
-        if GeneratorESP.Folder and GeneratorESP.Folder.Parent then
-            AntiDetect.ProtectInstance(GeneratorESP.Folder, "GenESPFolder", "BSS_GenESP_Folder")
-            cloakedCount = cloakedCount + 1
-        end
-        if Combat.FOVCircle and Combat.FOVCircle.Parent then
-            AntiDetect.ProtectInstance(Combat.FOVCircle, "AimFOVCircle", "BSS_AimFOV")
-            cloakedCount = cloakedCount + 1
-        end
-        if Combat.LaserPart and Combat.LaserPart.Parent then
-            pcall(function()
-                Combat.LaserPart.Parent = AntiDetect.GetWorldHelperParent()
-            end)
-            AntiDetect.ProtectInstance(Combat.LaserPart, "AimLaserPart", "BSS_RGB_AimLaser")
-            cloakedCount = cloakedCount + 1
-        end
-        if State.SpectateAnchorPart and State.SpectateAnchorPart.Parent then
-            pcall(function()
-                State.SpectateAnchorPart.Parent = AntiDetect.GetWorldHelperParent()
-            end)
-            AntiDetect.ProtectInstance(State.SpectateAnchorPart, "RemoteViewAnchor", "BSS_RemoteViewAnchor")
-            cloakedCount = cloakedCount + 1
-        end
-
-        AntiDetect.CloakedInstances = (AntiDetect.Enabled and AntiDetect.GuiCloakEnabled) and cloakedCount or 0
-        AntiDetect.UpdateStatusBanner()
-    end
-
-    function AntiDetect.UpdateStatusBanner()
-        if not UI.AntiDetectStatusLabel or not UI.AntiDetectStatusLabel.Parent then
-            return
-        end
-        if not AntiDetect.Enabled then
-            UI.AntiDetectStatusLabel.Text = "  Status Anti-Detect: NONAKTIF (Mode Terbuka)"
-            return
-        end
-        local layers = {}
-        if AntiDetect.GuiCloakEnabled then table.insert(layers, "GUI Cloak (" .. tostring(AntiDetect.CloakedInstances) .. ")") end
-        if AntiDetect.PropertySpoofEnabled then table.insert(layers, "Spoof (" .. tostring(AntiDetect.SpoofedReads) .. ")") end
-        if AntiDetect.AntiKickHookEnabled or AntiDetect.RemoteSanitizerEnabled then
-            table.insert(layers, string.format("Guard (%d Kick / %d Report)", AntiDetect.BlockedKicks, AntiDetect.BlockedReports))
-        end
-        if AntiDetect.PhysicsStealthEnabled then table.insert(layers, "CamStealth") end
-        if AntiDetect.FlyStealthEnabled then table.insert(layers, "FlyStealth") end
-        if AntiDetect.TeleportStealthEnabled then table.insert(layers, "TPStealth") end
-        local activeStr = (#layers > 0) and table.concat(layers, " • ") or "Standby"
-        UI.AntiDetectStatusLabel.Text = "  Anti-Detect AKTIF [" .. AntiDetect.HookSupportLabel .. "] • " .. activeStr
-    end
-
-    function AntiDetect.NeutralizeLocalSignals()
-        if not AntiDetect.Enabled or typeof(getconnections) ~= "function" then
-            return
-        end
-        local function disableExternalConns(signal)
-            if not signal then return end
-            pcall(function()
-                for _, conn in ipairs(getconnections(signal)) do
-                    if conn and conn.Enabled and type(conn.Disable) == "function" then
-                        local fn = conn.Function
-                        local isExecutorFn = (typeof(iscclosure) == "function" and fn and iscclosure(fn))
-                            or (typeof(isexecutorclosure) == "function" and fn and isexecutorclosure(fn))
-                        local srcPath = ""
-                        if fn and typeof(debug) == "table" and typeof(debug.info) == "function" then
-                            local okInfo, s = pcall(debug.info, fn, "s")
-                            if okInfo and type(s) == "string" then
-                                srcPath = string.lower(s)
-                            end
+        local disabled = {}
+        local okConns, conns = pcall(getconnections, signal)
+        if okConns and type(conns) == "table" then
+            for _, conn in ipairs(conns) do
+                local isConnActive = (conn.Enabled == nil or conn.Enabled == true)
+                    and (conn.Connected == nil or conn.Connected == true)
+                local fnRef = conn.Function
+                if isConnActive and type(fnRef) == "function" then
+                    local isLuaClosure = (typeof(islclosure) ~= "function") or islclosure(fnRef)
+                    local isExternal = true
+                    if ourEnv and typeof(getfenv) == "function" then
+                        local okEnv, fnEnv = pcall(getfenv, fnRef)
+                        if okEnv and fnEnv == ourEnv then
+                            isExternal = false
                         end
-                        local isCoreRoblox = string.find(srcPath, "playermodule", 1, true)
-                            or string.find(srcPath, "controlscript", 1, true)
-                            or string.find(srcPath, "cameramodule", 1, true)
-                            or string.find(srcPath, "animate", 1, true)
-                            or string.find(srcPath, "rbxts", 1, true)
-                        if not isExecutorFn and not isCoreRoblox then
-                            pcall(function() conn:Disable() end)
+                    end
+                    if isLuaClosure and isExternal then
+                        local okDis = pcall(function()
+                            conn:Disable()
+                        end)
+                        if okDis then
+                            table.insert(disabled, conn)
                         end
                     end
                 end
+            end
+        end
+
+        local okRun, r1, r2 = pcall(fn)
+
+        for _, conn in ipairs(disabled) do
+            pcall(function()
+                conn:Enable()
             end)
         end
 
-        local char = LocalPlayer and LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            if AntiDetect.PropertySpoofEnabled then
-                disableExternalConns(hum:GetPropertyChangedSignal("WalkSpeed"))
-                disableExternalConns(hum:GetPropertyChangedSignal("JumpPower"))
-                disableExternalConns(hum:GetPropertyChangedSignal("JumpHeight"))
-            end
-            if AntiDetect.FlyStealthEnabled then
-                disableExternalConns(hum:GetPropertyChangedSignal("PlatformStand"))
+        if not okRun then
+            error(r1)
+        end
+        return r1, r2
+    end
+
+    function AntiDetect.SetStealthProperty(inst, propName, value)
+        if not inst or not inst.Parent then return end
+        if not Protection.AntiDetectEnabled then
+            inst[propName] = value
+            return
+        end
+        local okSig, sig = pcall(function()
+            return inst:GetPropertyChangedSignal(propName)
+        end)
+        if okSig and sig then
+            AntiDetect.WithStealthSignal(sig, function()
+                inst[propName] = value
+            end)
+        else
+            inst[propName] = value
+        end
+    end
+
+    function AntiDetect.StealthPivot(char, root, targetCF)
+        if not char or not char.Parent then return end
+        if not Protection.AntiDetectEnabled or not root or not root.Parent then
+            char:PivotTo(targetCF)
+            return
+        end
+
+        local disabled = {}
+        if typeof(getconnections) == "function" then
+            local signals = {}
+            pcall(function() table.insert(signals, root:GetPropertyChangedSignal("CFrame")) end)
+            pcall(function() table.insert(signals, root:GetPropertyChangedSignal("Position")) end)
+            pcall(function() table.insert(signals, root:GetPropertyChangedSignal("Anchored")) end)
+
+            for _, sig in ipairs(signals) do
+                local okC, conns = pcall(getconnections, sig)
+                if okC and type(conns) == "table" then
+                    for _, conn in ipairs(conns) do
+                        local fnRef = conn.Function
+                        if type(fnRef) == "function" then
+                            local isLuaClosure = (typeof(islclosure) ~= "function") or islclosure(fnRef)
+                            local isExternal = true
+                            if ourEnv and typeof(getfenv) == "function" then
+                                local okEnv, fnEnv = pcall(getfenv, fnRef)
+                                if okEnv and fnEnv == ourEnv then
+                                    isExternal = false
+                                end
+                            end
+                            if isLuaClosure and isExternal and (conn.Enabled == nil or conn.Enabled == true) then
+                                if pcall(function() conn:Disable() end) then
+                                    table.insert(disabled, conn)
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
-        if AntiDetect.PropertySpoofEnabled and workspace then
-            disableExternalConns(workspace:GetPropertyChangedSignal("Gravity"))
+
+        local okPivot, errPivot = pcall(function()
+            char:PivotTo(targetCF)
+        end)
+
+        for _, conn in ipairs(disabled) do
+            pcall(function() conn:Enable() end)
+        end
+
+        if not okPivot then
+            error(errPivot)
         end
     end
 
     function AntiDetect.InstallHooks()
-        if AntiDetect.HooksInstalled then
-            return
+        if typeof(getgenv) == "function" then
+            local env = getgenv()
+            if env.BSS_AntiDetectHooked then
+                return true
+            end
         end
 
-        local canMetamethod = (typeof(hookmetamethod) == "function")
-            and (typeof(getnamecallmethod) == "function")
-            and (typeof(newcclosure) == "function")
-            and (typeof(checkcaller) == "function")
+        if typeof(checkcaller) ~= "function" then
+            return false
+        end
 
-        local suspiciousRemoteKeywords = {
+        local explicitACRemotes = {
             "anticheat", "anti_cheat", "cheatdetect", "exploitdetect",
-            "banplayer", "banreport", "reportexploit", "flagcheat",
-            "tamperdetect", "speedhack", "flyhack", "noclipdetect",
-            "securityviolation", "kickexploit", "tphack", "teleporthack",
-            "poscheck", "positioncheck", "speedcheck", "flycheck",
-            "aircheck", "movementcheck", "rubberband", "ac_", "logcheat"
+            "flydetect", "speeddetect", "tpdetect", "teleportdetect",
+            "noclipdetect", "flagcheat", "reportexploit", "banplayer", "kickplayer"
         }
 
-        local hiddenFlyChildNames = {
-            ["LinearVelocity"] = true,
-            ["AlignOrientation"] = true,
-            ["BodyVelocity"] = true,
-            ["BodyGyro"] = true,
-            ["VectorForce"] = true,
-            ["BSS_FlyLinearVel"] = true,
-            ["BSS_FlyAlignOri"] = true,
-            ["BSS_FlyAttachment"] = true,
-            ["LinearVelocityConstraint"] = true,
-            ["AlignOrientationConstraint"] = true,
-            ["RootRigAttachment_Aux"] = true,
-        }
-
-        local spoofedKeys = {
-            WalkSpeed = true,
-            JumpPower = true,
-            JumpHeight = true,
-            PlatformStand = true,
-            FloorMaterial = true,
-            AssemblyLinearVelocity = true,
-            Velocity = true,
-            CanCollide = true,
-            Gravity = true,
-            FieldOfView = true,
-        }
-
-        local workspaceRef = workspace
-        local lpRef = LocalPlayer
-        local cachedChar = lpRef and lpRef.Character
-        local cachedCam = workspaceRef.CurrentCamera
-        local inIndexHook = false
-
-        if lpRef then
-            Utils.Track(lpRef.CharacterAdded:Connect(function(newChar)
-                cachedChar = newChar
-            end))
-            Utils.Track(lpRef.CharacterRemoving:Connect(function()
-                cachedChar = nil
-            end))
+        local function isAntiCheatRemoteName(nameStr)
+            local lower = string.lower(tostring(nameStr or ""))
+            for _, pat in ipairs(explicitACRemotes) do
+                if string.find(lower, pat, 1, true) then
+                    return true
+                end
+            end
+            return false
         end
-        Utils.Track(workspaceRef:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-            cachedCam = workspaceRef.CurrentCamera
-        end))
 
-        if canMetamethod then
-            local okIndex = pcall(function()
+        local okHook = pcall(function()
+            if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" then
                 local oldIndex
-                oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
-                    if inIndexHook or not AntiDetect.Enabled or type(key) ~= "string" or not spoofedKeys[key] or checkcaller() or typeof(self) ~= "Instance" then
-                        return oldIndex(self, key)
-                    end
+                oldIndex = hookmetamethod(game, "__index", function(self, key)
+                    if Protection.AntiDetectEnabled and not checkcaller() and typeof(self) == "Instance" and type(key) == "string" then
+                        if self == workspace and key == "Gravity" then
+                            return State.OriginalGravity
+                        end
 
-                    inIndexHook = true
-                    local okSpoof, hasResult, spoofVal = pcall(function()
-                        if cachedChar then
-                            local parent = oldIndex(self, "Parent")
-                            if rawequal(parent, cachedChar) then
-                                local className = oldIndex(self, "ClassName")
-                                if className == "Humanoid" then
-                                    if AntiDetect.PropertySpoofEnabled then
-                                        if key == "WalkSpeed" and State.WalkSpeed ~= 16 then
-                                            AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                            return true, 16
-                                        elseif key == "JumpPower" and State.JumpPower ~= 50 then
-                                            AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                            return true, 50
-                                        elseif key == "JumpHeight" and State.JumpPower ~= 50 then
-                                            AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                            return true, 7.2
-                                        elseif key == "PlatformStand" and State.FlyEnabled then
-                                            AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                            return true, false
-                                        end
-                                    end
-                                    if AntiDetect.FlyStealthEnabled and State.FlyEnabled then
-                                        if key == "PlatformStand" then
-                                            AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                            return true, false
-                                        elseif key == "FloorMaterial" then
-                                            AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                            return true, Enum.Material.Plastic
-                                        end
-                                    end
-                                else
-                                    if key == "CanCollide" and State.NoclipEnabled and Physics.NoclipCache[self] ~= nil then
-                                        AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                        return true, Physics.NoclipCache[self]
-                                    elseif ((AntiDetect.FlyStealthEnabled and State.FlyEnabled)
-                                        or (AntiDetect.TeleportStealthEnabled and State.IsTeleportLocking))
-                                        and (key == "AssemblyLinearVelocity" or key == "Velocity") then
-                                        AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                        return true, Vector3.zero
+                        local cam = oldIndex(workspace, "CurrentCamera")
+                        if self == cam and key == "FieldOfView" then
+                            return 70
+                        end
+
+                        local cls = oldIndex(self, "ClassName")
+                        if cls == "Humanoid" then
+                            local myChar = oldIndex(LocalPlayer, "Character")
+                            if myChar and oldIndex(self, "Parent") == myChar then
+                                if key == "WalkSpeed" and State.WalkSpeed ~= 16 then
+                                    return 16
+                                elseif key == "JumpPower" and State.JumpPower ~= 50 then
+                                    return 50
+                                elseif key == "PlatformStand" and State.FlyEnabled then
+                                    return false
+                                end
+                            end
+                        elseif cls == "Part" or cls == "MeshPart" or cls == "BasePart" then
+                            if key == "CanCollide" and State.NoclipEnabled then
+                                local origCol = rawget(Physics.NoclipCache, self)
+                                if origCol ~= nil then
+                                    return origCol
+                                end
+                            elseif key == "CanTouch" and (Combat.MeleeImmunity or Combat.DisasterImmunity) then
+                                local origM = rawget(Combat.TouchedPartsCache, self)
+                                if origM ~= nil then
+                                    return origM
+                                end
+                                local origH = rawget(Combat.HazardPartsCache, self)
+                                if origH ~= nil then
+                                    return origH
+                                end
+                            end
+
+                            local myChar = oldIndex(LocalPlayer, "Character")
+                            if myChar and oldIndex(self, "Parent") == myChar and oldIndex(self, "Name") == "HumanoidRootPart" then
+                                if key == "Anchored" and State.IsTeleportLocking then
+                                    return State.PreTeleportAnchored
+                                elseif (key == "AssemblyLinearVelocity" or key == "Velocity") and (State.FlyEnabled or State.IsTeleportLocking) then
+                                    local realVel = oldIndex(self, key)
+                                    if typeof(realVel) == "Vector3" and realVel.Magnitude > 20 then
+                                        return Vector3.zero
                                     end
                                 end
                             end
                         end
-
-                        if AntiDetect.PropertySpoofEnabled then
-                            if rawequal(self, workspaceRef) and key == "Gravity" and State.Gravity ~= State.OriginalGravity then
-                                AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                return true, State.OriginalGravity
-                            elseif cachedCam and rawequal(self, cachedCam) and key == "FieldOfView" and State.CameraFOV ~= 70 then
-                                AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                return true, 70
-                            end
-                        end
-                        return false, nil
-                    end)
-                    inIndexHook = false
-
-                    if okSpoof and hasResult then
-                        return spoofVal
                     end
                     return oldIndex(self, key)
-                end))
-            end)
+                end)
 
-            local okNamecall = pcall(function()
                 local oldNamecall
-                oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-                    if AntiDetect.Enabled and not checkcaller() and typeof(self) == "Instance" then
+                oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                    if Protection.AntiDetectEnabled and not checkcaller() and typeof(self) == "Instance" then
                         local method = getnamecallmethod()
-                        if (method == "Kick" or method == "kick") and rawequal(self, lpRef) and AntiDetect.AntiKickHookEnabled then
-                            AntiDetect.BlockedKicks = AntiDetect.BlockedKicks + 1
+                        if self == LocalPlayer and (method == "Kick" or method == "kick") then
+                            Protection.AntiDetectBlocks = Protection.AntiDetectBlocks + 1
                             return nil
                         end
-                        if (method == "FireServer" or method == "InvokeServer") and AntiDetect.RemoteSanitizerEnabled then
-                            local rName = string.lower(tostring(self))
-                            for _, kw in ipairs(suspiciousRemoteKeywords) do
-                                if string.find(rName, kw, 1, true) then
-                                    AntiDetect.BlockedReports = AntiDetect.BlockedReports + 1
+
+                        if method == "GetState" and oldIndex(self, "ClassName") == "Humanoid" then
+                            local myChar = oldIndex(LocalPlayer, "Character")
+                            if myChar and oldIndex(self, "Parent") == myChar then
+                                if State.FlyEnabled or Combat.DisasterImmunity or Combat.MeleeImmunity then
+                                    local st = oldNamecall(self, ...)
+                                    if st == Enum.HumanoidStateType.Physics
+                                        or st == Enum.HumanoidStateType.PlatformStanding
+                                        or st == Enum.HumanoidStateType.Ragdoll
+                                        or st == Enum.HumanoidStateType.FallingDown then
+                                        return Enum.HumanoidStateType.Running
+                                    end
+                                    return st
+                                end
+                            end
+                        end
+
+                        if method == "FireServer" or method == "InvokeServer" then
+                            local cls = oldIndex(self, "ClassName")
+                            if cls == "RemoteEvent" or cls == "RemoteFunction" or cls == "UnreliableRemoteEvent" then
+                                local rName = oldIndex(self, "Name")
+                                if isAntiCheatRemoteName(rName) then
+                                    Protection.AntiDetectBlocks = Protection.AntiDetectBlocks + 1
                                     return nil
-                                end
-                            end
-                        end
-                        if method == "PreloadAsync" and AntiDetect.GuiCloakEnabled then
-                            local contentList = select(1, ...)
-                            if type(contentList) == "table" then
-                                local filtered = {}
-                                local modified = false
-                                for _, item in ipairs(contentList) do
-                                    if typeof(item) == "Instance" and UI.ScreenGui and (rawequal(item, UI.ScreenGui) or item:IsDescendantOf(UI.ScreenGui)) then
-                                        modified = true
-                                    else
-                                        table.insert(filtered, item)
-                                    end
-                                end
-                                if modified then
-                                    return oldNamecall(self, filtered, select(2, ...))
-                                end
-                            end
-                        end
-                        if AntiDetect.FlyStealthEnabled and State.FlyEnabled and cachedChar then
-                            if rawequal(self, cachedChar) or self:IsDescendantOf(cachedChar) then
-                                if method == "GetState" then
-                                    AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                    return Enum.HumanoidStateType.Running
-                                elseif (method == "FindFirstChild" or method == "FindFirstChildWhichIsA" or method == "FindFirstChildOfClass") then
-                                    local targetArg = select(1, ...)
-                                    if type(targetArg) == "string" and hiddenFlyChildNames[targetArg] then
-                                        AntiDetect.SpoofedReads = AntiDetect.SpoofedReads + 1
-                                        return nil
-                                    end
                                 end
                             end
                         end
                     end
                     return oldNamecall(self, ...)
-                end))
-            end)
-
-            if okIndex and okNamecall then
-                AntiDetect.HookSupportLabel = "Full Hook + Cloak"
-            elseif okIndex or okNamecall then
-                AntiDetect.HookSupportLabel = "Partial Hook + Cloak"
-            end
-        end
-
-        AntiDetect.NeutralizeLocalSignals()
-        AntiDetect.HooksInstalled = true
-    end
-
-    function AntiDetect.StepFlyStealth(dt)
-        local _, hum, root = Utils.GetCharacter()
-        local cam = workspace.CurrentCamera
-        if not State.FlyEnabled or not hum or not root or not cam then
-            return false
-        end
-
-        -- Hapus seluruh BodyMover/Constraint agar tidak terdeteksi scanner child pada HumanoidRootPart
-        if Physics.FlyLV or Physics.FlyAO or Physics.FlyAttachment or Physics.FlyBV or Physics.FlyBG then
-            for _, inst in ipairs({ Physics.FlyLV, Physics.FlyAO, Physics.FlyAttachment, Physics.FlyBV, Physics.FlyBG }) do
-                if inst then
-                    pcall(function() inst:Destroy() end)
-                end
-            end
-            Physics.FlyLV = nil
-            Physics.FlyAO = nil
-            Physics.FlyAttachment = nil
-            Physics.FlyBV = nil
-            Physics.FlyBG = nil
-        end
-
-        if hum.Sit then
-            hum.Sit = false
-        end
-
-        -- Jaga PlatformStand tetap false & state Running agar server/klien tidak mendeteksi status terbang
-        if hum.PlatformStand then
-            hum.PlatformStand = false
-        end
-        hum.AutoRotate = false
-        local curState = hum:GetState()
-        if curState == Enum.HumanoidStateType.Freefall or curState == Enum.HumanoidStateType.Physics then
-            pcall(function()
-                hum:ChangeState(Enum.HumanoidStateType.Running)
-            end)
-        end
-
-        local forward = 0
-        local right = 0
-        local up = 0
-
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then forward = forward + 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then forward = forward - 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then right = right + 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then right = right - 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then up = up + 1 end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-            up = up - 1
-        end
-
-        if forward == 0 and right == 0 and hum.MoveDirection.Magnitude > 0.05 then
-            local camCF = cam.CFrame
-            local flatLook = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
-            local flatRight = Vector3.new(camCF.RightVector.X, 0, camCF.RightVector.Z)
-            if flatLook.Magnitude > 0.001 then
-                forward = hum.MoveDirection:Dot(flatLook.Unit)
-            else
-                local flatUp = Vector3.new(camCF.UpVector.X, 0, camCF.UpVector.Z)
-                if flatUp.Magnitude > 0.001 then
-                    forward = hum.MoveDirection:Dot(flatUp.Unit) * (camCF.LookVector.Y < 0 and 1 or -1)
-                end
-            end
-            if flatRight.Magnitude > 0.001 then
-                right = hum.MoveDirection:Dot(flatRight.Unit)
-            end
-        end
-
-        local desiredDir = (cam.CFrame.LookVector * forward) + (cam.CFrame.RightVector * right) + Vector3.new(0, up, 0)
-        local targetVel = Vector3.zero
-        if desiredDir.Magnitude > 0.01 then
-            targetVel = desiredDir.Unit * State.FlySpeed
-        end
-
-        local safeDt = math.clamp(dt or 0.016, 0.001, 0.1)
-        local alpha = math.clamp(safeDt * 14, 0.15, 1)
-        Physics.FlyCurrentVel = Physics.FlyCurrentVel:Lerp(targetVel, alpha)
-        if Physics.FlyCurrentVel.Magnitude < 0.05 and targetVel == Vector3.zero then
-            Physics.FlyCurrentVel = Vector3.zero
-        end
-
-        local nextPos = root.Position + (Physics.FlyCurrentVel * safeDt)
-        local lookDir = cam.CFrame.LookVector
-        if lookDir.Magnitude < 0.001 then
-            lookDir = root.CFrame.LookVector
-        end
-
-        root.CFrame = CFrame.lookAt(nextPos, nextPos + lookDir)
-        root.AssemblyLinearVelocity = Vector3.new(0, 0.01, 0)
-        root.AssemblyAngularVelocity = Vector3.zero
-        return true
-    end
-
-    function AntiDetect.ExecuteStealthTeleport(targetCFrame, targetPlayer)
-        local char, hum, root = Utils.GetCharacter(LocalPlayer)
-        if not char or not root then
-            return false, 0
-        end
-
-        local startPos = root.Position
-        local destCF = targetCFrame
-        if targetPlayer then
-            local liveInfo = TeleportAPI.ResolvePlayerState(targetPlayer)
-            if liveInfo then
-                destCF = liveInfo.CFrame * CFrame.new(0, 0.5, 3)
-            end
-        end
-
-        local destPos = destCF.Position
-        local travelDistance = (destPos - startPos).Magnitude
-        State.LastTeleportDistance = travelDistance
-
-        State.TeleportToken = State.TeleportToken + 1
-        local myToken = State.TeleportToken
-
-        if hum then
-            hum.Sit = false
-            if hum.SeatPart then
-                local weld = hum.SeatPart:FindFirstChild("SeatWeld")
-                if weld then weld:Destroy() end
-            end
-            pcall(function()
-                hum:ChangeState(Enum.HumanoidStateType.Running)
-            end)
-        end
-
-        TeleportAPI.RequestStreamAt(destPos, 6)
-
-        if not State.IsTeleportLocking then
-            State.PreTeleportAnchored = root.Anchored
-            State.IsTeleportLocking = true
-        end
-
-        local savedCollide = {}
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                savedCollide[part] = part.CanCollide
-                part.CanCollide = false
-                part.AssemblyLinearVelocity = Vector3.zero
-                part.AssemblyAngularVelocity = Vector3.zero
-            end
-        end
-
-        local function restorePartCollisions()
-            for part, orig in pairs(savedCollide) do
-                if part and part.Parent and part:IsA("BasePart") then
-                    part.CanCollide = orig
-                end
-            end
-            table.clear(savedCollide)
-        end
-
-        task.spawn(function()
-            -- Tahap 1: Micro-stepped transit agar melewati batas jarak per-frame anti-teleport
-            if travelDistance > 1 and travelDistance <= 4500 then
-                local stepCount = math.clamp(math.ceil(travelDistance / 90), 2, 18)
-                local rotOnly = destCF - destCF.Position
-                for s = 1, stepCount do
-                    RunService.Heartbeat:Wait()
-                    if State.TeleportToken ~= myToken or not char or not char.Parent or not root or not root.Parent then
-                        restorePartCollisions()
-                        return
-                    end
-                    if targetPlayer and targetPlayer.Parent then
-                        local updatedInfo = TeleportAPI.ResolvePlayerState(targetPlayer)
-                        if updatedInfo then
-                            destCF = updatedInfo.CFrame * CFrame.new(0, 0.5, 3)
-                            destPos = destCF.Position
-                            rotOnly = destCF - destCF.Position
-                        end
-                    end
-                    local frac = s / stepCount
-                    local interpPos = startPos:Lerp(destPos, frac)
-                    for _, part in ipairs(char:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.AssemblyLinearVelocity = Vector3.zero
-                            part.AssemblyAngularVelocity = Vector3.zero
-                        end
-                    end
-                    char:PivotTo(CFrame.new(interpPos) * rotOnly)
-                end
-            end
-
-            if not char or not char.Parent or not root or not root.Parent then
-                restorePartCollisions()
-                return
-            end
-
-            -- Tahap 2: Stabilisasi posisi & stream area tujuan
-            root.Anchored = true
-            char:PivotTo(destCF)
-            Combat.LastSafePosition = destPos
-            Combat.LastSafeCFrame = destCF
-
-            local holdSteps = (travelDistance > 2500 or targetPlayer ~= nil) and 18 or 10
-            for step = 1, holdSteps do
-                RunService.Heartbeat:Wait()
-                if State.TeleportToken ~= myToken or not char or not char.Parent or not root or not root.Parent then
-                    restorePartCollisions()
-                    return
-                end
-                if targetPlayer and targetPlayer.Parent then
-                    local updatedInfo = TeleportAPI.ResolvePlayerState(targetPlayer)
-                    if updatedInfo then
-                        destCF = updatedInfo.CFrame * CFrame.new(0, 0.5, 3)
-                        destPos = destCF.Position
-                    end
-                end
-                if step == 3 or step == 8 or step == 14 then
-                    TeleportAPI.RequestStreamAt(destPos, 4)
-                end
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.AssemblyLinearVelocity = Vector3.zero
-                        part.AssemblyAngularVelocity = Vector3.zero
-                    end
-                end
-                char:PivotTo(destCF)
-            end
-
-            restorePartCollisions()
-            if root and root.Parent then
-                root.Anchored = State.PreTeleportAnchored
-                root.AssemblyLinearVelocity = Vector3.zero
-                root.AssemblyAngularVelocity = Vector3.zero
-                Combat.LastSafePosition = root.Position
-                Combat.LastSafeCFrame = root.CFrame
-            end
-            if hum and hum.Parent then
-                pcall(function()
-                    hum:ChangeState(Enum.HumanoidStateType.Landed)
-                    hum:ChangeState(Enum.HumanoidStateType.Running)
                 end)
-            end
-            State.IsTeleportLocking = false
 
-            -- Tahap 3: Penjaga anti-rubberband pasca-teleport (menolak tarik-balik dari server)
-            for _ = 1, 24 do
-                RunService.Heartbeat:Wait()
-                if State.TeleportToken ~= myToken or not char or not char.Parent or not root or not root.Parent then
-                    return
-                end
-                if (root.Position - destPos).Magnitude > 38 and not targetPlayer then
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                    char:PivotTo(destCF)
-                    Combat.LastSafePosition = destPos
-                    Combat.LastSafeCFrame = destCF
+                if typeof(getgenv) == "function" then
+                    getgenv().BSS_AntiDetectHooked = true
                 end
             end
         end)
 
-        return true, travelDistance
+        return okHook
     end
 
-    function AntiDetect.RestoreAll()
-        AntiDetect.Enabled = false
-        AntiDetect.GuiCloakEnabled = false
-        AntiDetect.PropertySpoofEnabled = false
-        AntiDetect.AntiKickHookEnabled = false
-        AntiDetect.RemoteSanitizerEnabled = false
-        AntiDetect.PhysicsStealthEnabled = false
-        AntiDetect.FlyStealthEnabled = false
-        AntiDetect.TeleportStealthEnabled = false
-    end
+    AntiDetect.InstallHooks()
 end
 
 -- ============================================================================
@@ -2360,8 +1872,8 @@ function TeleportAPI.EnsureRemoteViewAnchor(targetCF)
     local anchor = State.SpectateAnchorPart
     if not anchor or not anchor.Parent then
         anchor = Instance.new("Part")
-        anchor.Name = AntiDetect.GetStealthName("RemoteViewAnchor", "BSS_RemoteViewAnchor")
-        anchor.Archivable = false
+        anchor.Name = "CameraSubjectPart"
+        anchor:SetAttribute("_BSS_Stealth", true)
         anchor.Size = Vector3.new(1, 1, 1)
         anchor.Transparency = 1
         anchor.Anchored = true
@@ -2369,7 +1881,9 @@ function TeleportAPI.EnsureRemoteViewAnchor(targetCF)
         anchor.CanTouch = false
         anchor.CanQuery = false
         anchor.CastShadow = false
-        anchor.Parent = AntiDetect.GetWorldHelperParent()
+        AntiDetect.WithStealthSignal(workspace.ChildAdded, function()
+            anchor.Parent = workspace
+        end)
         State.SpectateAnchorPart = anchor
     end
     if targetCF then
@@ -2385,8 +1899,8 @@ function TeleportAPI.DestroyRemoteViewAnchor()
         end)
         State.SpectateAnchorPart = nil
     end
-    local leftover = workspace:FindFirstChild("BSS_RemoteViewAnchor")
-    if leftover then
+    local leftover = workspace:FindFirstChild("BSS_RemoteViewAnchor") or workspace:FindFirstChild("CameraSubjectPart")
+    if leftover and (leftover.Name == "BSS_RemoteViewAnchor" or leftover:GetAttribute("_BSS_Stealth")) then
         pcall(function()
             leftover:Destroy()
         end)
@@ -2495,15 +2009,13 @@ function Utils.GetTargetWorldPosition(target)
 end
 
 function Utils.SafeTeleport(targetCFrame, targetPlayer)
-    if AntiDetect.Enabled and AntiDetect.TeleportStealthEnabled then
-        return AntiDetect.ExecuteStealthTeleport(targetCFrame, targetPlayer)
-    end
     local char, hum, root = Utils.GetCharacter(LocalPlayer)
     if not char or not root then
         return false, 0
     end
 
-    local startPos = root.Position
+    local startCF = root.CFrame
+    local startPos = startCF.Position
     local destCF = targetCFrame
     if targetPlayer then
         local liveInfo = TeleportAPI.ResolvePlayerState(targetPlayer)
@@ -2541,13 +2053,17 @@ function Utils.SafeTeleport(targetCFrame, targetPlayer)
         end
     end
 
-    root.Anchored = true
-    char:PivotTo(destCF)
+    AntiDetect.SetStealthProperty(root, "Anchored", true)
+
+    local useStealthMicroHop = Protection.AntiDetectEnabled and (targetPlayer == nil) and (travelDistance > 45) and (travelDistance <= 1200)
+    local initialCF = useStealthMicroHop and startCF:Lerp(destCF, 0.25) or destCF
+    AntiDetect.StealthPivot(char, root, initialCF)
     Combat.LastSafePosition = destPos
     Combat.LastSafeCFrame = destCF
 
     task.spawn(function()
         local maxSteps = (travelDistance > 2500 or targetPlayer ~= nil) and 22 or 12
+        local hopAlphas = { 0.55, 0.82, 1.0 }
         for step = 1, maxSteps do
             RunService.Heartbeat:Wait()
             if State.TeleportToken ~= myToken then
@@ -2573,17 +2089,26 @@ function Utils.SafeTeleport(targetCFrame, targetPlayer)
                         part.AssemblyAngularVelocity = Vector3.zero
                     end
                 end
-                char:PivotTo(destCF)
+                local stepCF = destCF
+                if useStealthMicroHop and step <= #hopAlphas then
+                    stepCF = startCF:Lerp(destCF, hopAlphas[step])
+                end
+                AntiDetect.StealthPivot(char, root, stepCF)
             end
         end
 
         if State.TeleportToken == myToken then
             if root and root.Parent then
-                root.Anchored = State.PreTeleportAnchored
+                AntiDetect.SetStealthProperty(root, "Anchored", State.PreTeleportAnchored)
                 root.AssemblyLinearVelocity = Vector3.zero
                 root.AssemblyAngularVelocity = Vector3.zero
                 Combat.LastSafePosition = root.Position
                 Combat.LastSafeCFrame = root.CFrame
+            end
+            if hum and hum.Parent and not State.FlyEnabled and not Carry.Enabled then
+                pcall(function()
+                    hum:ChangeState(Enum.HumanoidStateType.Running)
+                end)
             end
             State.IsTeleportLocking = false
         end
@@ -2901,32 +2426,28 @@ function Physics.CleanupFly()
 
     local _, hum, root = Utils.GetCharacter()
     if root then
-        for _, objName in ipairs({
-            "BSS_FlyLinearVel", "BSS_FlyAlignOri", "BSS_FlyAttachment", "BSS_FlyVelocity", "BSS_FlyGyro",
-            "LinearVelocityConstraint", "AlignOrientationConstraint", "RootRigAttachment_Aux"
-        }) do
+        for _, objName in ipairs({ "BSS_FlyLinearVel", "BSS_FlyAlignOri", "BSS_FlyAttachment", "BSS_FlyVelocity", "BSS_FlyGyro" }) do
             local old = root:FindFirstChild(objName)
             if old then old:Destroy() end
+        end
+        for _, child in ipairs(root:GetChildren()) do
+            if child:GetAttribute("_BSS_Stealth") then
+                child:Destroy()
+            end
         end
         root.AssemblyLinearVelocity = Vector3.zero
     end
     if hum then
-        hum.PlatformStand = false
+        AntiDetect.SetStealthProperty(hum, "PlatformStand", false)
         hum.AutoRotate = true
-        pcall(function()
-            hum:ChangeState(Enum.HumanoidStateType.Landed)
-            hum:ChangeState(Enum.HumanoidStateType.Running)
-        end)
+        if hum:GetState() == Enum.HumanoidStateType.Physics then
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
     end
 end
 
 function Physics.StepSmoothFly(dt)
-    if State.FlyEnabled and AntiDetect.Enabled and AntiDetect.FlyStealthEnabled then
-        if AntiDetect.StepFlyStealth(dt) then
-            return
-        end
-    end
-    local _, hum, root = Utils.GetCharacter()
+    local char, hum, root = Utils.GetCharacter()
     local cam = workspace.CurrentCamera
     if not State.FlyEnabled or not hum or not root or not cam then
         if Physics.FlyLV or Physics.FlyBV then
@@ -2941,38 +2462,49 @@ function Physics.StepSmoothFly(dt)
 
     if not Physics.FlyAttachment or Physics.FlyAttachment.Parent ~= root then
         Physics.CleanupFly()
-        local flyNames = AntiDetect.GetFlyInstanceNames()
+        local function attachStealth(inst)
+            inst:SetAttribute("_BSS_Stealth", true)
+            AntiDetect.WithStealthSignal(root.ChildAdded, function()
+                if char then
+                    AntiDetect.WithStealthSignal(char.DescendantAdded, function()
+                        inst.Parent = root
+                    end)
+                else
+                    inst.Parent = root
+                end
+            end)
+        end
+
         local att = Instance.new("Attachment")
-        att.Name = flyNames.Attachment
-        att.Archivable = false
-        att.Parent = root
+        att.Name = "RootRigAttachment"
+        attachStealth(att)
         Physics.FlyAttachment = att
 
         local lv = Instance.new("LinearVelocity")
-        lv.Name = flyNames.LinearVelocity
-        lv.Archivable = false
+        lv.Name = "VectorForceMover"
         lv.Attachment0 = att
         lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
         lv.RelativeTo = Enum.ActuatorRelativeTo.World
         lv.MaxForce = 9e9
         lv.VectorVelocity = Vector3.zero
-        lv.Parent = root
+        attachStealth(lv)
         Physics.FlyLV = lv
 
         local ao = Instance.new("AlignOrientation")
-        ao.Name = flyNames.AlignOrientation
-        ao.Archivable = false
+        ao.Name = "OrientationSensor"
         ao.Attachment0 = att
         ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
         ao.RigidityEnabled = false
         ao.MaxTorque = 9e9
         ao.Responsiveness = 38
         ao.CFrame = cam.CFrame
-        ao.Parent = root
+        attachStealth(ao)
         Physics.FlyAO = ao
     end
 
-    hum.PlatformStand = true
+    if not hum.PlatformStand then
+        AntiDetect.SetStealthProperty(hum, "PlatformStand", true)
+    end
     hum.AutoRotate = false
     Physics.FlyAO.CFrame = cam.CFrame
 
@@ -3018,7 +2550,10 @@ function Physics.StepSmoothFly(dt)
         Physics.FlyCurrentVel = Vector3.zero
     end
 
-    Physics.FlyLV.VectorVelocity = Physics.FlyCurrentVel
+    local hoverJitter = (Protection.AntiDetectEnabled and targetVel.Magnitude < 0.05)
+        and Vector3.new(0, math.sin(os.clock() * 14) * 0.08, 0)
+        or Vector3.zero
+    Physics.FlyLV.VectorVelocity = Physics.FlyCurrentVel + hoverJitter
     root.AssemblyAngularVelocity = Vector3.zero
 end
 
@@ -3048,14 +2583,11 @@ end
 
 do
     UI.ScreenGui = Utils.Create("ScreenGui", {
-        Name = AntiDetect.GetStealthName("MainScreenGui", App.GuiName),
-        Archivable = false,
+        Name = App.GuiName,
         ResetOnSpawn = false,
-        DisplayOrder = 999999999,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
         IgnoreGuiInset = true,
-    }, AntiDetect.GetStealthGuiParent())
-    AntiDetect.ProtectInstance(UI.ScreenGui, "MainScreenGui", App.GuiName)
+    }, getGuiParent())
 
     UI.ToastContainer = Utils.Create("Frame", {
         Name = "ToastContainer",
@@ -3451,7 +2983,7 @@ do
         Position = UDim2.new(0, 24, 0, 0),
         BackgroundTransparency = 1,
         Font = Theme.FontFamily,
-        Text = "Anti-Bug: AKTIF",
+        Text = "Anti-Detect: AKTIF",
         TextColor3 = Theme.TextSecondary,
         TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -4090,8 +3622,7 @@ end
 -- ============================================================================
 do
     ESP.Folder = Utils.Create("Folder", {
-        Name = AntiDetect.GetStealthName("PlayerESPFolder", "BSS_ESP_Folder"),
-        Archivable = false,
+        Name = "BSS_ESP_Folder",
     }, UI.ScreenGui)
 
     function ESP.GetRandomPlayerColor(plr)
@@ -4325,8 +3856,8 @@ end
 -- 11. UNIVERSAL ITEM ESP & GENERATOR ESP (Unlimited Distance, Map-Adaptive)
 -- ============================================================================
 do
-    ItemESP.Folder = Utils.Create("Folder", { Name = AntiDetect.GetStealthName("ItemESPFolder", "BSS_ItemESP_Folder"), Archivable = false }, UI.ScreenGui)
-    GeneratorESP.Folder = Utils.Create("Folder", { Name = AntiDetect.GetStealthName("GenESPFolder", "BSS_GenESP_Folder"), Archivable = false }, UI.ScreenGui)
+    ItemESP.Folder = Utils.Create("Folder", { Name = "BSS_ItemESP_Folder" }, UI.ScreenGui)
+    GeneratorESP.Folder = Utils.Create("Folder", { Name = "BSS_GenESP_Folder" }, UI.ScreenGui)
 
     local function isPlayerDescendant(inst)
         for _, plr in ipairs(Players:GetPlayers()) do
@@ -4782,8 +4313,7 @@ end
 -- ============================================================================
 do
     Combat.FOVCircle = Utils.Create("Frame", {
-        Name = AntiDetect.GetStealthName("AimFOVCircle", "BSS_AimFOV"),
-        Archivable = false,
+        Name = "BSS_AimFOV",
         Size = UDim2.new(0, Combat.FOVRadius * 2, 0, Combat.FOVRadius * 2),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -4832,9 +4362,8 @@ do
 
     function Combat.UpdateLaser(startPos, endPos)
         if not Combat.LaserPart or not Combat.LaserPart.Parent then
-            Combat.LaserPart = Utils.Create("Part", {
-                Name = AntiDetect.GetStealthName("AimLaserPart", "BSS_RGB_AimLaser"),
-                Archivable = false,
+            local lpPart = Utils.Create("Part", {
+                Name = "BeamEffect",
                 Anchored = true,
                 CanCollide = false,
                 CanTouch = false,
@@ -4843,7 +4372,12 @@ do
                 Material = Enum.Material.Neon,
                 Transparency = 0.15,
                 Size = Vector3.new(0.08, 0.08, 1),
-            }, AntiDetect.GetWorldHelperParent())
+            })
+            lpPart:SetAttribute("_BSS_Stealth", true)
+            AntiDetect.WithStealthSignal(workspace.ChildAdded, function()
+                lpPart.Parent = workspace
+            end)
+            Combat.LaserPart = lpPart
         end
 
         local dist = (endPos - startPos).Magnitude
@@ -5330,7 +4864,7 @@ do
         if Players:GetPlayerFromCharacter(part.Parent) or (part.Parent and Players:GetPlayerFromCharacter(part.Parent.Parent)) then
             return false
         end
-        if part == Combat.LaserPart or part == State.SpectateAnchorPart or part.Name == "BSS_RGB_AimLaser" or part.Name == "BSS_RemoteViewAnchor" then
+        if part.Name == "BSS_RGB_AimLaser" or part.Name == "BSS_RemoteViewAnchor" then
             return false
         end
 
@@ -5403,20 +4937,28 @@ do
         table.clear(Combat.HazardPartsCache)
         local char = Utils.GetCharacter(LocalPlayer)
         if char then
-            local shield = char:FindFirstChild("BSS_DisasterShieldFF")
-            if shield then shield:Destroy() end
+            for _, child in ipairs(char:GetChildren()) do
+                if child.Name == "BSS_DisasterShieldFF" or child:GetAttribute("_BSS_Stealth") then
+                    child:Destroy()
+                end
+            end
         end
     end
 
     function Protection.EnsureDisasterForceField(char)
         if not char or not char.Parent then return end
-        local ff = char:FindFirstChild("BSS_DisasterShieldFF")
-        if not ff then
-            ff = Instance.new("ForceField")
-            ff.Name = "BSS_DisasterShieldFF"
-            ff.Visible = false
-            ff.Parent = char
+        for _, child in ipairs(char:GetChildren()) do
+            if child:IsA("ForceField") and (child.Name == "BSS_DisasterShieldFF" or child:GetAttribute("_BSS_Stealth")) then
+                return
+            end
         end
+        local ff = Instance.new("ForceField")
+        ff.Name = "ForceField"
+        ff:SetAttribute("_BSS_Stealth", true)
+        ff.Visible = false
+        AntiDetect.WithStealthSignal(char.ChildAdded, function()
+            ff.Parent = char
+        end)
     end
 
     function Protection.StepDisasterImmunity()
@@ -5536,6 +5078,56 @@ do
                     if not hazGround then
                         Combat.LastSafePosition = myPos
                         Combat.LastSafeCFrame = root.CFrame
+                    end
+                end
+            end
+        end
+    end
+
+    function Protection.StepMeleeImmunity()
+        if not Combat.MeleeImmunity then return end
+        local char, hum, root = Utils.GetCharacter(LocalPlayer)
+        if not char or not hum or not root then return end
+
+        local badStates = {
+            [Enum.HumanoidStateType.Ragdoll] = true,
+            [Enum.HumanoidStateType.FallingDown] = true,
+            [Enum.HumanoidStateType.Physics] = true,
+        }
+        if badStates[hum:GetState()] then
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+        if not State.FlyEnabled and not Carry.Enabled and hum.PlatformStand then
+            hum.PlatformStand = false
+        end
+
+        if not State.FlyEnabled then
+            local vel = root.AssemblyLinearVelocity
+            local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+            if horizSpeed > (State.WalkSpeed + 28) or vel.Y > 65 then
+                root.AssemblyLinearVelocity = Vector3.new(0, math.min(vel.Y, 65), 0)
+            end
+            root.AssemblyAngularVelocity = Vector3.zero
+        end
+
+        if hum.Health > 0 and hum.Health < hum.MaxHealth then
+            hum.Health = hum.MaxHealth
+        end
+
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local enemyTool = plr.Character:FindFirstChildOfClass("Tool")
+                if enemyTool then
+                    local parts = getCachedToolParts(enemyTool)
+                    for _, desc in ipairs(parts) do
+                        if desc and desc.Parent then
+                            if Combat.TouchedPartsCache[desc] == nil then
+                                Combat.TouchedPartsCache[desc] = desc.CanTouch
+                            end
+                            if desc.CanTouch then
+                                desc.CanTouch = false
+                            end
+                        end
                     end
                 end
             end
@@ -6368,11 +5960,11 @@ do
     local function applyCharacterPhysics()
         local _, hum = Utils.GetCharacter()
         if hum then
-            hum.WalkSpeed = State.WalkSpeed
+            AntiDetect.SetStealthProperty(hum, "WalkSpeed", State.WalkSpeed)
             hum.UseJumpPower = true
-            hum.JumpPower = State.JumpPower
+            AntiDetect.SetStealthProperty(hum, "JumpPower", State.JumpPower)
         end
-        workspace.Gravity = State.Gravity
+        AntiDetect.SetStealthProperty(workspace, "Gravity", State.Gravity)
     end
 
     local wsSlider = Components.AddSlider(page, "Kecepatan Lari / Jalan (WalkSpeed Unlimited)", 16, 10000, 16, 0, 2, function(val)
@@ -6853,97 +6445,37 @@ do
 end
 
 -- ============================================================================
--- TAB 9: PENGATURAN (ANTI-DETECT, ANTI-BUG, ANTI-AFK, BAHASA IP, FONT & WARNA)
+-- TAB 9: PENGATURAN (ANTI-BUG, ANTI-AFK, BAHASA IP, FONT & WARNA MENU)
 -- ============================================================================
 do
     local page = Components.CreateTab("Settings", "⚙", 9)
+    Components.AddSectionHeader(page, "Sistem Anti-Bug / Error & Anti-AFK", 1)
 
-    Components.AddSectionHeader(page, "Sistem Anti-Detect & Stealth Mode (Terpadu)", 1)
-
-    local antiDetectBanner = Utils.Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 26),
-        BackgroundColor3 = Theme.BgCard,
-        BackgroundTransparency = 0.25,
-        Font = Theme.FontBold,
-        Text = "  Anti-Detect AKTIF • Memindai dukungan executor...",
-        TextColor3 = Theme.Success,
-        TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        LayoutOrder = 2,
-        ZIndex = 14,
-    }, page)
-    Utils.AddCorner(antiDetectBanner, 7)
-    Utils.AddStroke(antiDetectBanner, Theme.BorderSubtle, 1, 0.3)
-    UI.AntiDetectStatusLabel = antiDetectBanner
-
-    Components.AddToggle(page, "Master Anti-Detect & Stealth Mode", "Aktifkan perlindungan anti-deteksi terpadu (GUI Cloak, Spoof & Anti-Kick)", true, 3, function(on)
-        AntiDetect.Enabled = on
-        AntiDetect.RefreshCloak(false)
-        Utils.Notify("Anti-Detect Engine", on and "Master Anti-Detect & Stealth Mode AKTIF." or "Anti-Detect dimatikan sementara.", on and Theme.Success or Theme.Warning)
-    end)
-
-    Components.AddToggle(page, "GUI Cloaking & Acak Nama Objek (Hidden UI)", "Sembunyikan UI ke container tersembunyi & acak nama instance agar lolos scan", true, 4, function(on)
-        AntiDetect.GuiCloakEnabled = on
-        AntiDetect.RefreshCloak(on)
-        Utils.Notify("GUI Cloaking", on and "GUI disembunyikan & nama objek diacak." or "GUI Cloaking dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Spoofing Properti Karakter (Speed / Jump / Gravity)", "Samarkan WalkSpeed, JumpPower, Gravity & FOV agar terbaca normal oleh game", true, 5, function(on)
-        AntiDetect.PropertySpoofEnabled = on
-        AntiDetect.UpdateStatusBanner()
-        Utils.Notify("Property Spoofer", on and "Spoofing WalkSpeed/Jump/Gravity AKTIF." or "Property Spoofer dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Anti-Kick Lokal & Blokir Remote Laporan Anti-Cheat", "Tahan panggilan LocalPlayer:Kick() lokal & blokir remote pelaporan mencurigakan", true, 6, function(on)
-        AntiDetect.AntiKickHookEnabled = on
-        AntiDetect.RemoteSanitizerEnabled = on
-        AntiDetect.UpdateStatusBanner()
-        Utils.Notify("Anti-Kick & Remote Guard", on and "Penahan Kick lokal & filter remote AKTIF." or "Anti-Kick & Remote Guard dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Physics & Camera Instance Stealth", "Sembunyikan objek Fly, Laser & Anchor ke CurrentCamera dengan nama bawaan", true, 7, function(on)
-        AntiDetect.PhysicsStealthEnabled = on
-        AntiDetect.RefreshCloak(false)
-        Utils.Notify("Physics Stealth", on and "Objek Fly/Laser disembunyikan ke CurrentCamera." or "Physics Stealth dimatikan.", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Anti-Detect Fly (CFrame Stealth & State Spoof)", "Terbang tanpa objek BodyMover/Constraint serta menyamarkan status & kecepatan karakter", true, 8, function(on)
-        AntiDetect.FlyStealthEnabled = on
-        if on and State.FlyEnabled then
-            Physics.CleanupFly()
-        end
-        AntiDetect.UpdateStatusBanner()
-        Utils.Notify("Anti-Detect Fly", on and "Anti-Detect Fly (Stealth CFrame & State Spoof) AKTIF." or "Anti-Detect Fly dimatikan (mode Fly standar).", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddToggle(page, "Anti-Detect Teleport (Bypass Rubberband & Pos Spoof)", "Teleport bertahap anti-rubberband dengan penyamaran kecepatan & pelindung tarik-balik server", true, 9, function(on)
-        AntiDetect.TeleportStealthEnabled = on
-        AntiDetect.UpdateStatusBanner()
-        Utils.Notify("Anti-Detect Teleport", on and "Anti-Detect Teleport (Bypass Rubberband) AKTIF." or "Anti-Detect Teleport dimatikan (mode Teleport standar).", on and Theme.Success or Theme.TextSecondary)
-    end)
-
-    Components.AddButton(page, "Acak Ulang Identitas GUI & Objek (Re-Cloak Now)", "Perbarui nama acak seluruh container GUI & helper secara instan", "Re-Cloak", 10, function()
-        AntiDetect.RefreshCloak(true)
-        Utils.Notify("Stealth Re-Cloak", "Seluruh identitas GUI & helper berhasil diacak ulang!", Theme.Success)
-    end)
-
-    Components.AddSectionHeader(page, "Sistem Anti-Bug / Error & Anti-AFK", 11)
-
-    Components.AddToggle(page, "Proteksi Sistem: Anti-Bug & Pemulihan Otomatis", "Mencegah error pada setiap fitur dan memulihkannya otomatis saat terganggu", true, 12, function(on)
+    Components.AddToggle(page, "Proteksi Sistem: Anti-Bug & Pemulihan Otomatis", "Mencegah error pada setiap fitur dan memulihkannya otomatis saat terganggu", true, 2, function(on)
         Protection.AntiBugEnabled = on
         if UI.StatusLabel and UI.StatusLabel.Parent then
-            UI.StatusLabel.Text = on and "Anti-Bug: AKTIF" or "Anti-Bug: OFF"
+            UI.StatusLabel.Text = on and (Protection.AntiDetectEnabled and "Anti-Detect: AKTIF" or "Anti-Bug: AKTIF") or "Anti-Bug: OFF"
         end
         Utils.Notify("Anti-Bug Engine", on and "Proteksi anti-bug & auto-recovery AKTIF." or "Proteksi anti-bug dimatikan.", on and Theme.Success or Theme.Warning)
     end)
 
-    Components.AddToggle(page, "Proteksi Koneksi: Anti-Kick Diam (Anti-AFK)", "Mencegah terputus dari server otomatis saat karakter diam lebih dari 20 menit", true, 13, function(on)
+    Components.AddToggle(page, "Proteksi Anti-Detect: Fly, Teleport & Semua Fitur", "Menyamarkan fly, teleport, speed, noclip & semua fitur dari script anti-cheat map", true, 3, function(on)
+        Protection.AntiDetectEnabled = on
+        if on then
+            AntiDetect.InstallHooks()
+        end
+        if UI.StatusLabel and UI.StatusLabel.Parent then
+            UI.StatusLabel.Text = on and "Anti-Detect: AKTIF" or "Anti-Detect: OFF"
+        end
+        Utils.Notify("Anti-Detect Engine", on and "Proteksi Anti-Detect (Fly, Teleport & Semua Fitur) AKTIF!" or "Proteksi Anti-Detect dimatikan.", on and Theme.Success or Theme.Warning)
+    end)
+
+    Components.AddToggle(page, "Proteksi Koneksi: Anti-Kick Diam (Anti-AFK)", "Mencegah terputus dari server otomatis saat karakter diam lebih dari 20 menit", true, 4, function(on)
         Protection.AntiAFKEnabled = on
         Utils.Notify("Anti-AFK", on and "Anti-AFK aktif." or "Anti-AFK dimatikan.", on and Theme.Success or Theme.TextSecondary)
     end)
 
-    Components.AddSectionHeader(page, GeoLangAPI.T("lang_section"), 14)
+    Components.AddSectionHeader(page, GeoLangAPI.T("lang_section"), 5)
 
     local langStatusBanner = Utils.Create("TextLabel", {
         Size = UDim2.new(1, 0, 0, 26),
@@ -6962,7 +6494,7 @@ do
         TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
-        LayoutOrder = 15,
+        LayoutOrder = 6,
         ZIndex = 14,
     }, page)
     Utils.AddCorner(langStatusBanner, 7)
@@ -6983,7 +6515,7 @@ do
         GeoLangAPI.T("lang_selector"),
         langChipOptions,
         GeoLangAPI.CurrentLang,
-        14,
+        7,
         function(selectedCode)
             GeoLangAPI.SetLanguage(selectedCode, true)
             Utils.Notify(
@@ -6999,7 +6531,7 @@ do
         GeoLangAPI.T("lang_auto_btn"),
         GeoLangAPI.T("lang_auto_sub"),
         GeoLangAPI.T("lang_sync_now"),
-        15,
+        8,
         function()
             GeoLangAPI.ManualOverride = false
             GeoLangAPI.FetchRealTimeGeoIP(true)
@@ -7018,7 +6550,7 @@ do
         end
     end)
 
-    Components.AddSectionHeader(page, "Kustomisasi Font & Warna Panel Menu", 16)
+    Components.AddSectionHeader(page, "Kustomisasi Font & Warna Panel Menu", 9)
 
     Components.AddChipSelector(page, "Gaya Font Seluruh Panel Menu", {
         { Label = "Gotham Semi", Value = Enum.Font.GothamSemibold, Font = Enum.Font.GothamSemibold },
@@ -7027,7 +6559,7 @@ do
         { Label = "Creepster", Value = Enum.Font.Creepster, Font = Enum.Font.Creepster },
         { Label = "Roboto Mono", Value = Enum.Font.RobotoMono, Font = Enum.Font.RobotoMono },
         { Label = "Merriweather", Value = Enum.Font.Merriweather, Font = Enum.Font.Merriweather },
-    }, Enum.Font.GothamSemibold, 17, function(val)
+    }, Enum.Font.GothamSemibold, 10, function(val)
         Theme.FontFamily = val
         Theme.FontBold = (val == Enum.Font.Creepster or val == Enum.Font.FredokaOne) and val or Enum.Font.GothamBold
         Utils.ApplyMenuFontAndColors()
@@ -7041,7 +6573,7 @@ do
         { Label = "Hijau Neon", Value = Color3.fromRGB(46, 213, 115), Color = Color3.fromRGB(46, 213, 115) },
         { Label = "Biru Elektrik", Value = Color3.fromRGB(52, 152, 219), Color = Color3.fromRGB(52, 152, 219) },
         { Label = "Pink Neon", Value = Color3.fromRGB(255, 105, 180), Color = Color3.fromRGB(255, 105, 180) },
-    }, Color3.fromRGB(255, 118, 26), 18, function(val)
+    }, Color3.fromRGB(255, 118, 26), 11, function(val)
         Utils.SetAccentColor(val, val)
         Utils.Notify("Warna Aksen Menu", "Warna aksen panel menu diperbarui.", val)
     end)
@@ -7053,7 +6585,7 @@ do
         { Label = "Cyan Es", Value = Color3.fromRGB(115, 238, 255), Color = Color3.fromRGB(115, 238, 255) },
         { Label = "Hijau Mint", Value = Color3.fromRGB(120, 250, 175), Color = Color3.fromRGB(120, 250, 175) },
         { Label = "Hitam Pekat", Value = Color3.fromRGB(18, 14, 24), Color = Color3.fromRGB(18, 14, 24) },
-    }, "Auto", 19, function(val)
+    }, "Auto", 12, function(val)
         Theme.FontColorMode = val
         Utils.ApplyMenuFontAndColors()
         Utils.Notify("Warna Teks Menu", "Warna teks panel menu diperbarui.", Theme.Accent)
@@ -7066,7 +6598,7 @@ do
         { Label = "Coklat Labu", Value = Color3.fromRGB(54, 26, 12), Color = Color3.fromRGB(54, 26, 12) },
         { Label = "Terang Kabut", Value = Color3.fromRGB(238, 234, 246), Color = Color3.fromRGB(238, 234, 246) },
         { Label = "Emas Gelap", Value = Color3.fromRGB(56, 38, 10), Color = Color3.fromRGB(56, 38, 10) },
-    }, "None", 20, function(val)
+    }, "None", 13, function(val)
         if val == "None" then
             Theme.FontBgEnabled = false
         else
@@ -7078,14 +6610,14 @@ do
         Utils.Notify("Latar Teks Menu", "Latar belakang teks menu diperbarui.", Theme.Accent)
     end)
 
-    Components.AddSectionHeader(page, "Kontrol Pintasan & Pembersihan Panel", 21)
+    Components.AddSectionHeader(page, "Kontrol Pintasan & Pembersihan Panel", 14)
 
-    Components.AddButton(page, "Sembunyikan Panel Menu (RightShift)", "Atau ketuk ikon tengkorak 3D di layar kapan saja", "Sembunyi", 22, function()
+    Components.AddButton(page, "Sembunyikan Panel Menu (RightShift)", "Atau ketuk ikon tengkorak 3D di layar kapan saja", "Sembunyi", 15, function()
         App.IsOpen = false
         UI.MainFrame.Visible = false
     end)
 
-    Components.AddButton(page, "Matikan & Hapus Script (Unload Hub)", "Putus semua loop, pulihkan karakter/map, dan tutup GUI", "Unload", 23, function()
+    Components.AddButton(page, "Matikan & Hapus Script (Unload Hub)", "Putus semua loop, pulihkan karakter/map, dan tutup GUI", "Unload", 16, function()
         if typeof(getgenv) == "function" and type(getgenv().BSS_UnloadOld) == "function" then
             getgenv().BSS_UnloadOld()
         end
@@ -7345,17 +6877,19 @@ do
                 local _, hum = Utils.GetCharacter()
                 if hum then
                     if State.WalkSpeed ~= 16 and hum.WalkSpeed ~= State.WalkSpeed then
-                        hum.WalkSpeed = State.WalkSpeed
+                        AntiDetect.SetStealthProperty(hum, "WalkSpeed", State.WalkSpeed)
                     end
                     if State.JumpPower ~= 50 then
                         if not hum.UseJumpPower then hum.UseJumpPower = true end
-                        if hum.JumpPower ~= State.JumpPower then hum.JumpPower = State.JumpPower end
+                        if hum.JumpPower ~= State.JumpPower then
+                            AntiDetect.SetStealthProperty(hum, "JumpPower", State.JumpPower)
+                        end
                     end
                 end
             end
 
             if State.Gravity ~= State.OriginalGravity and workspace.Gravity ~= State.Gravity then
-                workspace.Gravity = State.Gravity
+                AntiDetect.SetStealthProperty(workspace, "Gravity", State.Gravity)
             end
 
             if State.FlyEnabled then
@@ -7568,8 +7102,6 @@ do
                 UI.TelemetryLabels.Players.Text = tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
             end
 
-            AntiDetect.UpdateStatusBanner()
-
             if UI.TelemetryLabels.WorldCoord then
                 local _, _, root = Utils.GetCharacter(LocalPlayer)
                 if root then
@@ -7591,7 +7123,7 @@ end
 -- 18. UNLOAD CLEANUP REGISTRY & INITIALIZATION
 -- ============================================================================
 local function unloadHub()
-    AntiDetect.RestoreAll()
+    Protection.AntiDetectEnabled = false
     State.TeleportToken = State.TeleportToken + 1
     State.IsTeleportLocking = false
     State.FlyEnabled = false
@@ -7689,17 +7221,12 @@ Utils.Track(LocalPlayer.CharacterAdded:Connect(function(char)
             Protection.EnsureDisasterForceField(char)
         end
         if State.FlyEnabled and hum then
-            if AntiDetect.Enabled and AntiDetect.FlyStealthEnabled then
-                hum.PlatformStand = false
-            else
-                hum.PlatformStand = true
-            end
+            hum.PlatformStand = true
             hum.AutoRotate = false
         end
         if State.SpectatingPlayer then
             TeleportAPI.StartRemoteView(State.SpectatingPlayer)
         end
-        AntiDetect.NeutralizeLocalSignals()
     end)
 end))
 
@@ -7711,8 +7238,6 @@ do
     end
 end
 
-AntiDetect.InstallHooks()
-AntiDetect.RefreshCloak(false)
 Components.SwitchTab("Dashboard")
 Utils.ApplyMenuFontAndColors()
 GeoLangAPI.RefreshBannerText()
